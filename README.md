@@ -1,4 +1,4 @@
-# hanap_mobile
+# hanap-mobile
 
 A new Flutter project.
 
