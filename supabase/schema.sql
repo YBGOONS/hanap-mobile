@@ -44,7 +44,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.profiles (id, role, first_name, last_name, email, location, skills, status)
+  insert into public.profiles (id, role, first_name, last_name, email, location, phone, skills, status)
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'role', 'client'),
@@ -52,6 +52,7 @@ begin
     coalesce(new.raw_user_meta_data ->> 'last_name', ''),
     new.email,
     coalesce(new.raw_user_meta_data ->> 'location', ''),
+    new.raw_user_meta_data ->> 'phone',
     case
       when new.raw_user_meta_data ? 'skills' then
         array(select jsonb_array_elements_text(new.raw_user_meta_data -> 'skills'))
@@ -138,12 +139,25 @@ create table public.jobs (
   cancel_reason text, -- set when a worker backs out via cancel_job() below
   cancelled_at timestamptz,
   -- Payment tracking is a separate column from `status` above (job progress
-  -- vs money movement are different concerns) — no real payment gateway
-  -- behind this yet, so there's no 'escrowed' state, just a flat request/
-  -- resolve flow. See mark_job_paid/request_refund/resolve_refund below.
-  payment_status text not null default 'unpaid' check (payment_status in ('unpaid', 'paid', 'refund_requested', 'refunded')),
+  -- vs money movement are different concerns). Escrow model: client pays
+  -- right after acceptance ('paid' = held in escrow), worker can't mark
+  -- 'arrived' without it (see verify_arrival_otp), and the money only
+  -- reaches the worker once the client explicitly confirms completion
+  -- ('released') — see mark_job_paid/complete_job/confirm_completion/
+  -- request_refund/resolve_refund below. Not backed by a real payment
+  -- gateway yet (PayMongo integration is a later follow-up); this whole
+  -- flow runs on a simulated instant "pay".
+  payment_status text not null default 'unpaid' check (payment_status in ('unpaid', 'paid', 'refund_requested', 'refunded', 'released')),
+  service_fee numeric(10, 2), -- HANAP's 10% cut, computed once at pay-time so it doesn't drift if budget is edited later
+  arrival_otp text, -- 4-digit code shown to the client, entered by the worker on arrival
+  arrival_verified_at timestamptz,
+  completion_photos text[], -- deprecated/unused: completion no longer requires photo proof (only refunds do, via refund_photo_url below)
+  confirmed_at timestamptz, -- when the client confirmed completion and released payment
   refund_reason text,
+  refund_photo_url text, -- required evidence, uploaded to the refund-evidence bucket
   refund_requested_at timestamptz,
+  refund_admin_message text, -- admin's note explaining their approve/deny decision
+  paymongo_source_id text, -- links a PayMongo GCash Source back to this job for the webhook (see supabase/functions)
   created_at timestamptz not null default now()
 );
 
@@ -249,6 +263,9 @@ begin
 end;
 $$;
 
+-- 'arrived' now only reachable via verify_arrival_otp, and 'completed' only
+-- via complete_job — both below. This RPC just handles 'in_progress' (Start
+-- Job) and 'cancelled'.
 create or replace function public.update_job_status(job_id uuid, new_status text)
 returns void
 language plpgsql
@@ -257,7 +274,7 @@ as $$
 declare
   j record;
 begin
-  if new_status not in ('arrived', 'in_progress', 'completed', 'cancelled') then
+  if new_status not in ('in_progress', 'cancelled') then
     raise exception 'Invalid status: %', new_status;
   end if;
 
@@ -273,24 +290,48 @@ begin
   insert into public.notifications (user_id, title, body, job_id)
   values (
     j.client_id,
-    case new_status
-      when 'arrived' then 'Your worker has arrived'
-      when 'in_progress' then 'Your job has started'
-      when 'completed' then 'Your job is complete'
-      else 'Job status updated'
-    end,
-    case new_status
-      when 'arrived' then 'Your worker has arrived at the job location for "' || j.category || '".'
-      else 'Your "' || j.category || '" job is now ' || new_status || '.'
-    end,
+    case new_status when 'in_progress' then 'Your job has started' else 'Job status updated' end,
+    'Your "' || j.category || '" job is now ' || new_status || '.',
     j.id
   );
 end;
 $$;
 
--- Worker backs out of a job they already accepted — returns it to the open
--- pool for other workers instead of leaving the client stuck.
-create or replace function public.cancel_job(job_id uuid, reason text)
+-- Worker enters the code the client sees in-app to confirm they're at the
+-- right job/location. Requires payment already in escrow — this is the
+-- gate that keeps a worker from heading out on an unpaid booking.
+create or replace function public.verify_arrival_otp(job_id uuid, otp text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  j record;
+begin
+  select * into j from public.jobs
+  where id = job_id and worker_id = auth.uid() and status = 'accepted' and payment_status = 'paid';
+
+  if not found then
+    raise exception 'Not authorized, or job not ready for arrival yet.';
+  end if;
+
+  if j.arrival_otp is null or otp is null or trim(otp) <> j.arrival_otp then
+    raise exception 'Incorrect code. Ask the client for the code shown in their app.';
+  end if;
+
+  update public.jobs set status = 'arrived', arrival_verified_at = now() where id = job_id;
+
+  insert into public.notifications (user_id, title, body, job_id)
+  values (j.client_id, 'Your worker has arrived', 'Your worker has arrived at the job location for "' || j.category || '".', j.id);
+end;
+$$;
+
+-- Worker finishes the job — this moves status to 'completed' but does NOT
+-- release payment; the client must still confirm (see confirm_completion
+-- below) before the escrowed money reaches the worker. No proof photo is
+-- required here — photo evidence is only required on the refund/dispute
+-- path (see request_refund).
+create or replace function public.complete_job(job_id uuid)
 returns void
 language plpgsql
 security definer set search_path = public
@@ -299,16 +340,87 @@ declare
   j record;
 begin
   update public.jobs
-  set status = 'open', worker_id = null, cancel_reason = reason, cancelled_at = now()
-  where id = job_id and worker_id = auth.uid() and status in ('accepted', 'arrived', 'in_progress')
+  set status = 'completed'
+  where id = job_id and worker_id = auth.uid() and status = 'in_progress'
   returning * into j;
+
+  if not found then
+    raise exception 'Not authorized, or job not ready to be completed.';
+  end if;
+
+  insert into public.notifications (user_id, title, body, job_id)
+  values (j.client_id, 'Job complete — please confirm', 'Your worker finished "' || j.category || '". Confirm to release payment.', j.id);
+end;
+$$;
+
+-- Client confirms the job is done — this is the only way escrowed money
+-- actually reaches the worker (see mark_job_paid for how it got into
+-- escrow, and resolve_refund for the dispute path instead of confirming).
+create or replace function public.confirm_completion(job_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  j record;
+begin
+  update public.jobs
+  set payment_status = 'released', confirmed_at = now()
+  where id = job_id and client_id = auth.uid() and status = 'completed' and payment_status = 'paid'
+  returning * into j;
+
+  if not found then
+    raise exception 'Not authorized, or job is not ready to be confirmed.';
+  end if;
+
+  insert into public.notifications (user_id, title, body, job_id)
+  values (j.worker_id, 'Payment released', 'The client confirmed "' || j.category || '" — your ₱' || coalesce(j.budget, 0)::text || ' has been released.', j.id);
+end;
+$$;
+
+grant execute on function public.verify_arrival_otp(uuid, text) to authenticated;
+grant execute on function public.complete_job(uuid) to authenticated;
+grant execute on function public.confirm_completion(uuid) to authenticated;
+
+-- Worker backs out of a job they already accepted — returns it to the open
+-- pool for other workers instead of leaving the client stuck. Since payment
+-- happens right after acceptance (see mark_job_paid below), a paid job
+-- getting cancelled here means the client is owed their money back — that's
+-- handled automatically instead of forcing them through request_refund for
+-- something that isn't their fault.
+create or replace function public.cancel_job(job_id uuid, reason text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  j record;
+begin
+  select * into j from public.jobs
+  where id = job_id and worker_id = auth.uid() and status in ('accepted', 'arrived', 'in_progress');
 
   if not found then
     raise exception 'Not authorized, or job cannot be cancelled right now.';
   end if;
 
+  update public.jobs
+  set status = 'open',
+      worker_id = null,
+      cancel_reason = reason,
+      cancelled_at = now(),
+      payment_status = case when j.payment_status = 'paid' then 'refunded' else j.payment_status end
+  where id = job_id;
+
   insert into public.notifications (user_id, title, body, job_id)
   values (j.client_id, 'Worker backed out', 'The worker backed out of your "' || j.category || '" job. It''s back in the open pool.', j.id);
+
+  if j.payment_status = 'paid' then
+    insert into public.transactions (job_id, client_id, worker_id, amount, type)
+    values (j.id, j.client_id, j.worker_id, coalesce(j.budget, 0) + coalesce(j.service_fee, 0), 'refund');
+
+    insert into public.notifications (user_id, title, body, job_id)
+    values (j.client_id, 'Automatically refunded', 'Your payment for "' || j.category || '" was refunded since the worker backed out.', j.id);
+  end if;
 end;
 $$;
 
@@ -435,7 +547,9 @@ create table public.transactions (
   job_id uuid not null references public.jobs (id) on delete cascade,
   client_id uuid not null references public.profiles (id) on delete cascade,
   worker_id uuid not null references public.profiles (id) on delete cascade,
-  amount numeric(10, 2) not null,
+  amount numeric(10, 2) not null, -- total the client paid/got refunded (labor + service fee)
+  worker_amount numeric(10, 2), -- labor fee portion — only set on 'payment' rows
+  platform_fee numeric(10, 2), -- HANAP's 10% cut — only set on 'payment' rows
   type text not null check (type in ('payment', 'refund')),
   created_at timestamptz not null default now()
 );
@@ -453,7 +567,11 @@ create policy "transactions_select_own_or_admin"
     or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
   );
 
--- Client pays for a completed job.
+-- Client pays into escrow right after a worker accepts — before the worker
+-- can even mark themselves 'arrived' (see verify_arrival_otp above). Charges
+-- the labor fee (budget) plus HANAP's 10% service fee on top; the worker
+-- still gets the full labor fee — the client pays the extra, not the worker.
+-- Also generates the arrival OTP the client will hand to the worker.
 create or replace function public.mark_job_paid(job_id uuid)
 returns void
 language plpgsql
@@ -461,25 +579,40 @@ security definer set search_path = public
 as $$
 declare
   j record;
+  v_fee numeric(10, 2);
+  v_otp text;
 begin
   select * into j from public.jobs
-  where id = job_id and client_id = auth.uid() and status = 'completed' and payment_status = 'unpaid';
+  where id = job_id and client_id = auth.uid() and status = 'accepted' and payment_status = 'unpaid';
 
   if not found then
     raise exception 'Job is not eligible for payment right now.';
   end if;
 
-  update public.jobs set payment_status = 'paid' where id = job_id;
-  insert into public.transactions (job_id, client_id, worker_id, amount, type)
-  values (j.id, j.client_id, j.worker_id, coalesce(j.budget, 0), 'payment');
+  v_fee := round(coalesce(j.budget, 0) * 0.10, 2);
+  v_otp := lpad(floor(random() * 10000)::int::text, 4, '0');
+
+  update public.jobs
+  set payment_status = 'paid', service_fee = v_fee, arrival_otp = v_otp
+  where id = job_id;
+
+  insert into public.transactions (job_id, client_id, worker_id, amount, worker_amount, platform_fee, type)
+  values (j.id, j.client_id, j.worker_id, coalesce(j.budget, 0) + v_fee, coalesce(j.budget, 0), v_fee, 'payment');
 
   insert into public.notifications (user_id, title, body, job_id)
-  values (j.worker_id, 'You got paid', 'You were paid ₱' || coalesce(j.budget, 0)::text || ' for "' || j.category || '".', j.id);
+  values (j.worker_id, 'Client paid for the job', 'The client paid for your "' || j.category || '" job and is escrowed with HANAP. Ask them for the arrival code when you get there.', j.id);
+
+  insert into public.notifications (user_id, title, body, job_id)
+  values (j.client_id, 'Payment held in escrow', 'Share this code with your worker when they arrive: ' || v_otp, j.id);
 end;
 $$;
 
--- Client requests a refund on a job they already paid for.
-create or replace function public.request_refund(job_id uuid, reason text)
+-- Client requests a refund on a job they already paid into escrow. Reason +
+-- photo evidence are both required — the photo is uploaded to the
+-- refund-evidence bucket first (client-side), and its URL passed in here.
+-- Works both before and after completion — the money is still in escrow
+-- either way, so this is the "dispute instead of confirming" path too.
+create or replace function public.request_refund(job_id uuid, reason text, photo_url text)
 returns void
 language plpgsql
 security definer set search_path = public
@@ -487,8 +620,15 @@ as $$
 declare
   j record;
 begin
+  if reason is null or length(trim(reason)) = 0 then
+    raise exception 'A reason is required.';
+  end if;
+  if photo_url is null or length(trim(photo_url)) = 0 then
+    raise exception 'A photo is required as evidence.';
+  end if;
+
   update public.jobs
-  set payment_status = 'refund_requested', refund_reason = reason, refund_requested_at = now()
+  set payment_status = 'refund_requested', refund_reason = reason, refund_photo_url = photo_url, refund_requested_at = now()
   where id = job_id and client_id = auth.uid() and payment_status = 'paid'
   returning * into j;
 
@@ -501,8 +641,12 @@ begin
 end;
 $$;
 
--- Admin approves or denies a pending refund request.
-create or replace function public.resolve_refund(job_id uuid, approve boolean)
+-- Admin approves or denies a pending refund request, always with a message
+-- explaining the decision. Approving sends the full escrowed amount back to
+-- the client; denying releases it to the worker instead (same effect as
+-- confirm_completion) — either way the dispute is fully resolved, nothing
+-- is left sitting in escrow unresolved.
+create or replace function public.resolve_refund(job_id uuid, approve boolean, message text)
 returns void
 language plpgsql
 security definer set search_path = public
@@ -513,31 +657,100 @@ begin
   if not exists (select 1 from public.profiles where id = auth.uid() and role = 'admin') then
     raise exception 'Not authorized.';
   end if;
+  if message is null or length(trim(message)) = 0 then
+    raise exception 'A message explaining the decision is required.';
+  end if;
 
   select * into j from public.jobs where id = job_id and payment_status = 'refund_requested';
   if not found then
     raise exception 'Job has no pending refund request.';
   end if;
 
+  update public.jobs set refund_admin_message = message where id = job_id;
+
   if approve then
     update public.jobs set payment_status = 'refunded' where id = job_id;
     insert into public.transactions (job_id, client_id, worker_id, amount, type)
-    values (j.id, j.client_id, j.worker_id, coalesce(j.budget, 0), 'refund');
+    values (j.id, j.client_id, j.worker_id, coalesce(j.budget, 0) + coalesce(j.service_fee, 0), 'refund');
 
     insert into public.notifications (user_id, title, body, job_id)
-    values (j.client_id, 'Refund approved', 'Your refund for "' || j.category || '" was approved.', j.id);
+    values (j.client_id, 'Refund approved', 'Your refund for "' || j.category || '" was approved: ' || message, j.id);
+    insert into public.notifications (user_id, title, body, job_id)
+    values (j.worker_id, 'Refund approved', 'The client''s refund for "' || j.category || '" was approved. No payment will be released for this job.', j.id);
   else
-    update public.jobs set payment_status = 'paid' where id = job_id;
+    update public.jobs set payment_status = 'released', confirmed_at = now() where id = job_id;
 
     insert into public.notifications (user_id, title, body, job_id)
-    values (j.client_id, 'Refund denied', 'Your refund request for "' || j.category || '" was denied.', j.id);
+    values (j.client_id, 'Refund denied', 'Your refund request for "' || j.category || '" was denied: ' || message, j.id);
+    insert into public.notifications (user_id, title, body, job_id)
+    values (j.worker_id, 'Payment released', 'The client''s refund request for "' || j.category || '" was denied — your ₱' || coalesce(j.budget, 0)::text || ' has been released.', j.id);
   end if;
 end;
 $$;
 
 grant execute on function public.mark_job_paid(uuid) to authenticated;
-grant execute on function public.request_refund(uuid, text) to authenticated;
-grant execute on function public.resolve_refund(uuid, boolean) to authenticated;
+grant execute on function public.request_refund(uuid, text, text) to authenticated;
+grant execute on function public.resolve_refund(uuid, boolean, text) to authenticated;
+
+-- ── RATINGS ─────────────────────────────────────────────────────────────
+-- One rating per completed job, left by the client for the worker. Public
+-- read (any authenticated user can see a worker's reviews, same idea as the
+-- public avatars bucket) — writes only through rate_job() below, which
+-- derives client_id/worker_id from the job itself instead of trusting
+-- client-supplied values.
+
+create table public.ratings (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null unique references public.jobs (id) on delete cascade,
+  client_id uuid not null references public.profiles (id) on delete cascade,
+  worker_id uuid not null references public.profiles (id) on delete cascade,
+  rating smallint not null check (rating between 1 and 5),
+  comment text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.ratings enable row level security;
+grant select on public.ratings to authenticated;
+create index ratings_worker_id_idx on public.ratings (worker_id);
+
+create policy "ratings_select_all"
+  on public.ratings for select
+  to authenticated
+  using (true);
+
+-- Client rates the worker once payment has actually been released (i.e.
+-- after they confirmed completion, or a denied refund auto-released it) —
+-- rating is a separate, optional step from confirm_completion, not paired
+-- with it, and not reachable while a refund is still being disputed.
+create or replace function public.rate_job(job_id uuid, rating smallint, comment text default null)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  j record;
+begin
+  if rating < 1 or rating > 5 then
+    raise exception 'Rating must be between 1 and 5.';
+  end if;
+
+  select * into j from public.jobs where id = job_id and client_id = auth.uid() and status = 'completed' and payment_status = 'released';
+  if not found then
+    raise exception 'Not authorized, or job is not eligible for a rating yet.';
+  end if;
+
+  insert into public.ratings (job_id, client_id, worker_id, rating, comment)
+  values (j.id, j.client_id, j.worker_id, rating, comment);
+
+  insert into public.notifications (user_id, title, body, job_id)
+  values (j.worker_id, 'New rating', 'You received a ' || rating || '-star rating for "' || j.category || '".', j.id);
+exception
+  when unique_violation then
+    raise exception 'This job has already been rated.';
+end;
+$$;
+
+grant execute on function public.rate_job(uuid, smallint, text) to authenticated;
 
 -- ── SCHEDULED JOBS (pg_cron) ────────────────────────────────────────────
 -- Two background sweeps: auto-cancel open jobs nobody accepted by their
@@ -654,5 +867,55 @@ create policy "avatars_update_own_folder"
   to authenticated
   using (
     bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- ── STORAGE: refund evidence ────────────────────────────────────────────
+-- Private bucket, same {user_id}/<filename> convention — a client's refund
+-- photo is dispute evidence, not something other users should browse.
+-- Readable by the uploading client and by admins (who resolve the request).
+
+insert into storage.buckets (id, name, public)
+values ('refund-evidence', 'refund-evidence', false)
+on conflict (id) do nothing;
+
+create policy "refund_evidence_upload_own_folder"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'refund-evidence'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "refund_evidence_read_own_file"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'refund-evidence'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "refund_evidence_admin_reads_all"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'refund-evidence'
+    and exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+  );
+
+-- ── STORAGE: completion photos (deprecated/unused) ──────────────────────
+-- Kept for backward compatibility with any already-uploaded rows; the
+-- worker completion flow no longer requires or collects photos (only the
+-- refund/dispute path does — see refund-evidence below).
+
+insert into storage.buckets (id, name, public)
+values ('completion-photos', 'completion-photos', true)
+on conflict (id) do nothing;
+
+create policy "completion_photos_upload_own_folder"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'completion-photos'
     and (storage.foldername(name))[1] = auth.uid()::text
   );

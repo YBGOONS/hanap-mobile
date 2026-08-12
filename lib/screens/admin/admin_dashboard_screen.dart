@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../main.dart';
 import '../../theme/dashboard_theme.dart';
+import '../../utils/validators.dart';
 import '../../widgets/dashboard/dashboard_widgets.dart';
 import '../public/home_screen.dart';
 
@@ -34,7 +35,7 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
-  _AdminTab _tab = _AdminTab.users;
+  _AdminTab _tab = _AdminTab.dashboard;
   bool _collapsed = false;
   _AdminProfile? _profile;
   int _pendingCount = 0;
@@ -522,11 +523,13 @@ class _ProfileStatusBadge extends StatelessWidget {
     case 'unpaid':
       return (label: 'Unpaid', color: DashboardColors.muted);
     case 'paid':
-      return (label: 'Paid', color: DashboardColors.statusCompleted);
+      return (label: 'In Escrow', color: DashboardColors.accent);
     case 'refund_requested':
       return (label: 'Refund Requested', color: DashboardColors.accent);
     case 'refunded':
       return (label: 'Refunded', color: DashboardColors.statusCancelled);
+    case 'released':
+      return (label: 'Released', color: DashboardColors.statusCompleted);
     default:
       return (label: status, color: DashboardColors.muted);
   }
@@ -838,6 +841,7 @@ class _OverviewData {
   final int totalJobs;
   final int activeJobs;
   final int completedJobs;
+  final double totalEarnings;
   final List<Map<String, dynamic>> recentUsers;
   final List<Map<String, dynamic>> recentJobs;
 
@@ -847,6 +851,7 @@ class _OverviewData {
     required this.totalJobs,
     required this.activeJobs,
     required this.completedJobs,
+    required this.totalEarnings,
     required this.recentUsers,
     required this.recentJobs,
   });
@@ -880,6 +885,14 @@ class _OverviewTabState extends State<_OverviewTab> {
             .order('created_at', ascending: false)
             .limit(5)) as List)
         .cast<Map<String, dynamic>>();
+    // Only count the 10% platform fee as earned once the payment has
+    // actually been released to the worker — 'paid' (still in escrow) and
+    // 'refund_requested' (dispute outcome undetermined) can still end up
+    // fully refunded, so they're not real earnings yet.
+    final txRows = ((await supabase.from('transactions').select('type, platform_fee, job:jobs(payment_status)')) as List).cast<Map<String, dynamic>>();
+    final earnings = txRows
+        .where((t) => t['type'] == 'payment' && (t['job'] as Map<String, dynamic>?)?['payment_status'] == 'released')
+        .fold<double>(0, (sum, t) => sum + ((t['platform_fee'] as num?) ?? 0).toDouble());
 
     return _OverviewData(
       clients: profileRows.where((p) => p['role'] == 'client').length,
@@ -887,6 +900,7 @@ class _OverviewTabState extends State<_OverviewTab> {
       totalJobs: jobRows.length,
       activeJobs: jobRows.where((j) => ['accepted', 'arrived', 'in_progress'].contains(j['status'])).length,
       completedJobs: jobRows.where((j) => j['status'] == 'completed').length,
+      totalEarnings: earnings,
       recentUsers: recentUsersRows,
       recentJobs: recentJobsRows,
     );
@@ -959,6 +973,8 @@ class _OverviewTabState extends State<_OverviewTab> {
                     Expanded(child: _PlainStatCard(value: "${d.activeJobs}", label: "Active Jobs", color: DashboardColors.statOpen)),
                     const SizedBox(width: 14),
                     Expanded(child: _PlainStatCard(value: "${d.completedJobs}", label: "Completed Jobs", color: DashboardColors.statusCompleted)),
+                    const SizedBox(width: 14),
+                    Expanded(child: _PlainStatCard(value: "₱${d.totalEarnings.toStringAsFixed(0)}", label: "Total Earnings (10% fee)", color: DashboardColors.accent)),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -1545,10 +1561,10 @@ class _RefundsTabState extends State<_RefundsTab> {
     await future;
   }
 
-  Future<void> _resolve(String jobId, bool approve) async {
+  Future<void> _resolve(String jobId, bool approve, String message) async {
     setState(() => _actingOnId = jobId);
     try {
-      await supabase.rpc('resolve_refund', params: {'job_id': jobId, 'approve': approve});
+      await supabase.rpc('resolve_refund', params: {'job_id': jobId, 'approve': approve, 'message': message});
       await _refresh();
     } on PostgrestException catch (e) {
       if (!mounted) return;
@@ -1596,8 +1612,8 @@ class _RefundsTabState extends State<_RefundsTab> {
                     itemBuilder: (context, i) => _RefundCard(
                       job: rows[i],
                       acting: _actingOnId == rows[i]['id'],
-                      onApprove: () => _resolve(rows[i]['id'] as String, true),
-                      onDeny: () => _resolve(rows[i]['id'] as String, false),
+                      onApprove: (message) => _resolve(rows[i]['id'] as String, true, message),
+                      onDeny: (message) => _resolve(rows[i]['id'] as String, false, message),
                     ),
                   );
                 },
@@ -1610,24 +1626,51 @@ class _RefundsTabState extends State<_RefundsTab> {
   }
 }
 
-class _RefundCard extends StatelessWidget {
+class _RefundCard extends StatefulWidget {
   final Map<String, dynamic> job;
   final bool acting;
-  final VoidCallback onApprove;
-  final VoidCallback onDeny;
+  final ValueChanged<String> onApprove;
+  final ValueChanged<String> onDeny;
 
   const _RefundCard({required this.job, required this.acting, required this.onApprove, required this.onDeny});
 
   @override
+  State<_RefundCard> createState() => _RefundCardState();
+}
+
+class _RefundCardState extends State<_RefundCard> {
+  final _messageCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _messageCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _viewEvidence(String path) async {
+    try {
+      final url = await supabase.storage.from('refund-evidence').createSignedUrl(path, 60 * 10);
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Could not open photo: $e")));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final job = widget.job;
     final client = job['client'] as Map<String, dynamic>?;
     final worker = job['worker'] as Map<String, dynamic>?;
     final clientName = client == null ? '—' : "${client['first_name']} ${client['last_name']}";
     final workerName = worker == null ? '—' : "${worker['first_name']} ${worker['last_name']}";
     final budget = (job['budget'] as num?)?.toDouble();
+    final serviceFee = (job['service_fee'] as num?)?.toDouble();
+    final photoPath = job['refund_photo_url'] as String?;
     final requestedAt = DateTime.tryParse(job['refund_requested_at'] as String? ?? '');
     final dateLabel =
         requestedAt == null ? '—' : "${requestedAt.year}-${requestedAt.month.toString().padLeft(2, '0')}-${requestedAt.day.toString().padLeft(2, '0')}";
+    final canAct = _messageCtrl.text.trim().isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1641,7 +1684,8 @@ class _RefundCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(child: Text(job['category'] as String, style: DashboardText.heading(size: 15, color: Colors.black87))),
-              if (budget != null) Text("₱${budget.toStringAsFixed(0)}", style: DashboardText.heading(size: 16, color: DashboardColors.accent)),
+              if (budget != null)
+                Text("₱${(budget + (serviceFee ?? 0)).toStringAsFixed(0)} escrowed", style: DashboardText.heading(size: 16, color: DashboardColors.accent)),
             ],
           ),
           const SizedBox(height: 6),
@@ -1658,6 +1702,25 @@ class _RefundCard extends StatelessWidget {
               style: DashboardText.body(size: 13, color: Colors.black87).copyWith(height: 1.4),
             ),
           ),
+          const SizedBox(height: 8),
+          if (photoPath != null)
+            OutlinedButton.icon(
+              onPressed: () => _viewEvidence(photoPath),
+              icon: const Icon(Icons.photo_outlined, size: 16),
+              label: Text("View Photo Evidence", style: DashboardText.body(size: 12, weight: FontWeight.w600)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: DashboardColors.primary,
+                side: const BorderSide(color: DashboardColors.border),
+              ),
+            ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _messageCtrl,
+            maxLines: 2,
+            style: DashboardText.body(size: 13, color: Colors.black87),
+            decoration: dashboardInputDecoration(label: "Message to client", hint: "Explain your decision (required)"),
+            onChanged: (_) => setState(() {}),
+          ),
           const SizedBox(height: 14),
           Row(
             children: [
@@ -1665,13 +1728,13 @@ class _RefundCard extends StatelessWidget {
                 child: SizedBox(
                   height: 40,
                   child: ElevatedButton(
-                    onPressed: acting ? null : onApprove,
+                    onPressed: widget.acting || !canAct ? null : () => widget.onApprove(_messageCtrl.text.trim()),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: DashboardColors.statusCompleted,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
-                    child: acting
+                    child: widget.acting
                         ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : Text("Approve Refund", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
                   ),
@@ -1682,13 +1745,13 @@ class _RefundCard extends StatelessWidget {
                 child: SizedBox(
                   height: 40,
                   child: OutlinedButton(
-                    onPressed: acting ? null : onDeny,
+                    onPressed: widget.acting || !canAct ? null : () => widget.onDeny(_messageCtrl.text.trim()),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFFC62828),
                       side: const BorderSide(color: Color(0xFFC62828)),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
-                    child: Text("Deny", style: DashboardText.body(size: 13, weight: FontWeight.w700)),
+                    child: Text("Deny (release to worker)", style: DashboardText.body(size: 12, weight: FontWeight.w700), textAlign: TextAlign.center),
                   ),
                 ),
               ),
@@ -1729,9 +1792,14 @@ class _ReportsTabState extends State<_ReportsTab> {
 
   Future<_ReportsData> _load() async {
     final jobRows = ((await supabase.from('jobs').select('category, status')) as List).cast<Map<String, dynamic>>();
-    final txRows = ((await supabase.from('transactions').select('type, amount')) as List).cast<Map<String, dynamic>>();
-    final payments = txRows.where((t) => t['type'] == 'payment').fold<double>(0, (sum, t) => sum + (t['amount'] as num).toDouble());
-    final refunds = txRows.where((t) => t['type'] == 'refund').fold<double>(0, (sum, t) => sum + (t['amount'] as num).toDouble());
+    final txRows = ((await supabase.from('transactions').select('type, platform_fee, job:jobs(payment_status)')) as List).cast<Map<String, dynamic>>();
+    // HANAP's actual earnings — the 10% platform fee, only once it's been
+    // released to the worker. 'paid' (still in escrow) and
+    // 'refund_requested' (dispute outcome undetermined) can still end up
+    // fully refunded, so they're not counted as earned yet.
+    final revenue = txRows
+        .where((t) => t['type'] == 'payment' && (t['job'] as Map<String, dynamic>?)?['payment_status'] == 'released')
+        .fold<double>(0, (sum, t) => sum + ((t['platform_fee'] as num?) ?? 0).toDouble());
 
     final categoryCounts = <String, int>{};
     for (final j in jobRows) {
@@ -1743,7 +1811,7 @@ class _ReportsTabState extends State<_ReportsTab> {
       categoryCounts: categoryCounts,
       totalJobs: jobRows.length,
       completedJobs: jobRows.where((j) => j['status'] == 'completed').length,
-      totalRevenue: payments - refunds,
+      totalRevenue: revenue,
     );
   }
 
@@ -1871,9 +1939,13 @@ class _SettingsTabState extends State<_SettingsTab> {
   late Future<Map<String, dynamic>> _profileFuture;
   final _newPassCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
   bool _saving = false;
+  bool _savingPhone = false;
   String? _error;
   String? _success;
+  String? _phoneError;
+  String? _phoneSuccess;
 
   @override
   void initState() {
@@ -1885,12 +1957,43 @@ class _SettingsTabState extends State<_SettingsTab> {
   void dispose() {
     _newPassCtrl.dispose();
     _confirmPassCtrl.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
   }
 
   Future<Map<String, dynamic>> _loadProfile() async {
     final userId = supabase.auth.currentUser!.id;
-    return await supabase.from('profiles').select().eq('id', userId).single();
+    final row = await supabase.from('profiles').select().eq('id', userId).single();
+    _phoneCtrl.text = row['phone'] as String? ?? '';
+    return row;
+  }
+
+  Future<void> _savePhone() async {
+    final phone = _phoneCtrl.text.trim();
+    if (!isValidPhMobile(phone)) {
+      setState(() => _phoneError = phPhoneErrorMessage);
+      return;
+    }
+    setState(() {
+      _savingPhone = true;
+      _phoneError = null;
+      _phoneSuccess = null;
+    });
+    try {
+      final userId = supabase.auth.currentUser!.id;
+      await supabase.from('profiles').update({'phone': phone}).eq('id', userId);
+      if (!mounted) return;
+      setState(() {
+        _savingPhone = false;
+        _phoneSuccess = "Phone number updated.";
+      });
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _savingPhone = false;
+        _phoneError = e.message;
+      });
+    }
   }
 
   Future<void> _changePassword() async {
@@ -1974,6 +2077,57 @@ class _SettingsTabState extends State<_SettingsTab> {
                           ),
                         );
                       },
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: DashboardColors.border)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Phone Number", style: DashboardText.heading(size: 15, color: Colors.black87)),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Used for GCash payment verification.",
+                            style: DashboardText.body(size: 12, color: DashboardColors.muted),
+                          ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _phoneCtrl,
+                            keyboardType: TextInputType.phone,
+                            inputFormatters: [PhPhoneInputFormatter()],
+                            onChanged: (_) => setState(() {
+                              _phoneError = null;
+                              _phoneSuccess = null;
+                            }),
+                            style: DashboardText.body(size: 14, color: Colors.black87),
+                            decoration: dashboardInputDecoration(label: "Phone Number", hint: "09XX XXX XXXX"),
+                          ),
+                          if (_phoneError != null) ...[
+                            const SizedBox(height: 10),
+                            Text(_phoneError!, style: DashboardText.body(size: 12, color: const Color(0xFFC62828))),
+                          ],
+                          if (_phoneSuccess != null) ...[
+                            const SizedBox(height: 10),
+                            Text(_phoneSuccess!, style: DashboardText.body(size: 12, color: DashboardColors.statusCompleted)),
+                          ],
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            height: 42,
+                            child: ElevatedButton(
+                              onPressed: _savingPhone ? null : _savePhone,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: DashboardColors.primary,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              child: _savingPhone
+                                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  : Text("Save", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 20),
                     Container(

@@ -2,27 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../main.dart';
 import '../../models/categories.dart';
+import '../../models/job.dart';
 import '../../theme/dashboard_theme.dart';
 
-/// Client-only — calls the post_job RPC, which inserts the job and notifies
-/// every active, available worker whose skills match the category. Pushed
-/// from the Client Dashboard, so it uses the dashboard theme (not the
-/// dark/gold public-site one) to match the screen it's launched from.
+/// Client-only. With no `job` passed, this is the Create form — calls the
+/// post_job RPC, which inserts the job and notifies every active, available
+/// worker whose skills match the category. With a `job` passed (must still
+/// be `status == 'open'` — enforced both by the RLS policy on the update
+/// and by only ever being reachable from an open job's card), it becomes
+/// the Edit form instead, updating that row directly. Pushed from the
+/// Client Dashboard, so it uses the dashboard theme (not the dark/gold
+/// public-site one) to match the screen it's launched from.
 class PostJobScreen extends StatefulWidget {
-  const PostJobScreen({super.key});
+  final Job? job;
+  const PostJobScreen({super.key, this.job});
 
   @override
   State<PostJobScreen> createState() => _PostJobScreenState();
 }
 
 class _PostJobScreenState extends State<PostJobScreen> {
-  String _category = kCategories.first;
-  final _descriptionCtrl = TextEditingController();
-  final _budgetCtrl = TextEditingController();
-  final _locationCtrl = TextEditingController();
-  DateTime? _scheduledDate;
+  late String _category = widget.job?.category ?? kCategories.first;
+  late final _descriptionCtrl = TextEditingController(text: widget.job?.description ?? '');
+  late final _budgetCtrl = TextEditingController(text: widget.job?.budget != null ? widget.job!.budget!.toStringAsFixed(0) : '');
+  late final _locationCtrl = TextEditingController(text: widget.job?.location ?? '');
+  late DateTime? _scheduledDate = widget.job?.scheduledDate;
   String? _error;
   bool _loading = false;
+
+  bool get _isEditing => widget.job != null;
 
   @override
   void dispose() {
@@ -71,13 +79,23 @@ class _PostJobScreenState extends State<PostJobScreen> {
     });
 
     try {
-      await supabase.rpc('post_job', params: {
-        'category': _category,
-        'description': _descriptionCtrl.text.trim(),
-        'budget': budget,
-        'location': _locationCtrl.text.trim(),
-        'scheduled_date': _scheduledDate?.toIso8601String().split('T').first,
-      });
+      if (_isEditing) {
+        await supabase.from('jobs').update({
+          'category': _category,
+          'description': _descriptionCtrl.text.trim(),
+          'budget': budget,
+          'location': _locationCtrl.text.trim(),
+          'scheduled_date': _scheduledDate?.toIso8601String().split('T').first,
+        }).eq('id', widget.job!.id);
+      } else {
+        await supabase.rpc('post_job', params: {
+          'category': _category,
+          'description': _descriptionCtrl.text.trim(),
+          'budget': budget,
+          'location': _locationCtrl.text.trim(),
+          'scheduled_date': _scheduledDate?.toIso8601String().split('T').first,
+        });
+      }
 
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -104,7 +122,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: DashboardColors.primary),
-        title: Text("Post a Job", style: DashboardText.heading(size: 18, color: Colors.black87)),
+        title: Text(_isEditing ? "Edit Job" : "Post a Job", style: DashboardText.heading(size: 18, color: Colors.black87)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -196,7 +214,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
                   ),
                   child: _loading
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : Text("Post Job", style: DashboardText.body(size: 14, weight: FontWeight.w700, color: Colors.white)),
+                      : Text(_isEditing ? "Save Changes" : "Post Job", style: DashboardText.body(size: 14, weight: FontWeight.w700, color: Colors.white)),
                 ),
               ),
             ],

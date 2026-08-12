@@ -106,7 +106,9 @@ class WorkerMyJobCard extends StatelessWidget {
   final String location;
   final String? clientName;
   final String status;
+  final int? rating;
   final Widget? actions;
+  final VoidCallback? onTap;
 
   const WorkerMyJobCard({
     super.key,
@@ -115,46 +117,53 @@ class WorkerMyJobCard extends StatelessWidget {
     required this.location,
     this.clientName,
     required this.status,
+    this.rating,
     this.actions,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: DashboardColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: Text(title, style: DashboardText.heading(size: 15, color: Colors.black87))),
-              if (budget != null)
-                Text("₱${budget!.toStringAsFixed(0)}", style: DashboardText.heading(size: 16, color: DashboardColors.accent)),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            children: [
-              _MetaRow(icon: Icons.location_on_outlined, text: location),
-              if (clientName != null) _MetaRow(icon: Icons.person_outline, text: clientName!),
-            ],
-          ),
-          const SizedBox(height: 14),
-          JobStepProgress(status: status),
-          if (actions != null) ...[
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: DashboardColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: Text(title, style: DashboardText.heading(size: 15, color: Colors.black87))),
+                if (budget != null)
+                  Text("₱${budget!.toStringAsFixed(0)}", style: DashboardText.heading(size: 16, color: DashboardColors.accent)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                _MetaRow(icon: Icons.location_on_outlined, text: location),
+                if (clientName != null) _MetaRow(icon: Icons.person_outline, text: clientName!),
+                if (rating != null) _MetaRow(icon: Icons.star, text: "$rating/5"),
+              ],
+            ),
             const SizedBox(height: 14),
-            actions!,
+            JobStepProgress(status: status),
+            if (actions != null) ...[
+              const SizedBox(height: 14),
+              actions!,
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

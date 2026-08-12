@@ -1,10 +1,11 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../main.dart';
 import '../../models/job.dart';
 import '../../theme/dashboard_theme.dart';
+import '../../utils/formatters.dart';
+import '../../utils/validators.dart';
 import '../../widgets/dashboard/active_job_card.dart';
 import '../../widgets/dashboard/dashboard_widgets.dart';
 import '../public/home_screen.dart';
@@ -20,7 +21,8 @@ import '../shared/notifications_screen.dart';
 /// Messages (per-job chat, shared/conversations_screen.dart +
 /// shared/chat_screen.dart) and Notifications (shared/notifications_screen.dart).
 class ClientDashboardScreen extends StatefulWidget {
-  const ClientDashboardScreen({super.key});
+  final bool openMyJobs;
+  const ClientDashboardScreen({super.key, this.openMyJobs = false});
 
   @override
   State<ClientDashboardScreen> createState() => _ClientDashboardScreenState();
@@ -29,9 +31,11 @@ class ClientDashboardScreen extends StatefulWidget {
 enum _Tab { dashboard, myJobs, workers, profile }
 
 class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
-  _Tab _tab = _Tab.dashboard;
+  late _Tab _tab = widget.openMyJobs ? _Tab.myJobs : _Tab.dashboard;
   int _dashboardRefreshTick = 0;
-  bool _hasUnread = false;
+  bool _hasUnreadNotif = false;
+  bool _hasUnreadMessages = false;
+  bool get _hasUnread => _hasUnreadNotif || _hasUnreadMessages;
 
   @override
   void initState() {
@@ -43,21 +47,23 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
     final userId = supabase.auth.currentUser!.id;
 
     final notifRows = await supabase.from('notifications').select('id').eq('user_id', userId).isFilter('read_at', null).limit(1);
-    if ((notifRows as List).isNotEmpty) {
-      if (mounted) setState(() => _hasUnread = true);
-      return;
-    }
+    final hasUnreadNotif = (notifRows as List).isNotEmpty;
 
     final jobRows = await supabase.from('jobs').select('id').or('client_id.eq.$userId,worker_id.eq.$userId').not('worker_id', 'is', null);
     final jobIds = (jobRows as List).map((r) => r['id'] as String).toList();
-    if (jobIds.isEmpty) {
-      if (mounted) setState(() => _hasUnread = false);
-      return;
+    bool hasUnreadMessages = false;
+    if (jobIds.isNotEmpty) {
+      final msgRows =
+          await supabase.from('messages').select('id').inFilter('job_id', jobIds).neq('sender_id', userId).isFilter('read_at', null).limit(1);
+      hasUnreadMessages = (msgRows as List).isNotEmpty;
     }
 
-    final msgRows =
-        await supabase.from('messages').select('id').inFilter('job_id', jobIds).neq('sender_id', userId).isFilter('read_at', null).limit(1);
-    if (mounted) setState(() => _hasUnread = (msgRows as List).isNotEmpty);
+    if (mounted) {
+      setState(() {
+        _hasUnreadNotif = hasUnreadNotif;
+        _hasUnreadMessages = hasUnreadMessages;
+      });
+    }
   }
 
   void _openJobsSheet() {
@@ -67,8 +73,8 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (_) => _ActionSheet(
         items: [
-          (icon: Icons.add_circle_outline, label: "Post a Job", onTap: _postJob),
-          (icon: Icons.list_alt_outlined, label: "My Jobs", onTap: () => setState(() => _tab = _Tab.myJobs)),
+          (icon: Icons.add_circle_outline, label: "Post a Job", hasUnread: false, onTap: _postJob),
+          (icon: Icons.list_alt_outlined, label: "My Jobs", hasUnread: false, onTap: () => setState(() => _tab = _Tab.myJobs)),
         ],
       ),
     );
@@ -76,7 +82,12 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
 
   Future<void> _postJob() async {
     final posted = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => const PostJobScreen()));
-    if (posted == true) setState(() => _dashboardRefreshTick++);
+    if (posted == true) {
+      setState(() {
+        _dashboardRefreshTick++;
+        _tab = _Tab.myJobs;
+      });
+    }
   }
 
   void _openInboxSheet() {
@@ -86,8 +97,8 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (_) => _ActionSheet(
         items: [
-          (icon: Icons.chat_bubble_outline, label: "Messages", onTap: () => _openInboxScreen(const ConversationsScreen())),
-          (icon: Icons.notifications_outlined, label: "Notifications", onTap: () => _openInboxScreen(const NotificationsScreen())),
+          (icon: Icons.chat_bubble_outline, label: "Messages", hasUnread: _hasUnreadMessages, onTap: () => _openInboxScreen(const ConversationsScreen())),
+          (icon: Icons.notifications_outlined, label: "Notifications", hasUnread: _hasUnreadNotif, onTap: () => _openInboxScreen(const NotificationsScreen())),
         ],
       ),
     );
@@ -214,21 +225,30 @@ class _DashboardTabState extends State<_DashboardTab> {
 
     final jobRows = await supabase
         .from('jobs')
-        .select('*, worker:profiles!jobs_worker_id_fkey(first_name,last_name)')
+        .select('*, worker:profiles!jobs_worker_id_fkey(first_name,last_name), ratings(rating,comment)')
         .eq('client_id', userId)
         .order('created_at', ascending: false);
     final jobs = (jobRows as List).map((r) => Job.fromMap(r as Map<String, dynamic>)).toList();
 
+    // Actively moving jobs (paying/arriving/working) take priority over a
+    // completed-but-idle one — otherwise an old completed job with nothing
+    // left to do could outrank one that actually needs the client's
+    // attention right now, just for being more recently created.
     Job? activeJob;
     for (final j in jobs) {
-      // A completed-but-unresolved job (still needs paying, or a refund
-      // request is pending) stays in the spotlight; once refunded it's
-      // fully done and just shows in Recent Jobs like any other job.
-      final needsAttention =
-          j.status == 'accepted' || j.status == 'arrived' || j.status == 'in_progress' || (j.status == 'completed' && j.paymentStatus != 'refunded');
-      if (needsAttention) {
+      if (j.status == 'accepted' || j.status == 'arrived' || j.status == 'in_progress') {
         activeJob = j;
         break;
+      }
+    }
+    if (activeJob == null) {
+      for (final j in jobs) {
+        if (j.status != 'completed') continue;
+        final awaitingAction = j.paymentStatus == 'paid' || j.paymentStatus == 'refund_requested' || (j.paymentStatus == 'released' && j.rating == null);
+        if (awaitingAction) {
+          activeJob = j;
+          break;
+        }
       }
     }
 
@@ -301,16 +321,7 @@ class _DashboardTabState extends State<_DashboardTab> {
                 const SizedBox(height: 20),
 
                 if (data.activeJob != null)
-                  ActiveJobCard(
-                    jobId: data.activeJob!.id,
-                    title: data.activeJob!.category,
-                    workerName: data.activeJob!.workerName ?? "—",
-                    budget: data.activeJob!.budget ?? 0,
-                    location: data.activeJob!.location,
-                    status: data.activeJob!.status,
-                    paymentStatus: data.activeJob!.paymentStatus,
-                    onChanged: _refresh,
-                  )
+                  ActiveJobCard(job: data.activeJob!, onChanged: _refresh)
                 else
                   const EmptyActiveJobState(),
                 const SizedBox(height: 24),
@@ -332,7 +343,7 @@ class _DashboardTabState extends State<_DashboardTab> {
 }
 
 class _ActionSheet extends StatelessWidget {
-  final List<({IconData icon, String label, VoidCallback? onTap})> items;
+  final List<({IconData icon, String label, bool hasUnread, VoidCallback? onTap})> items;
   const _ActionSheet({required this.items});
 
   @override
@@ -345,7 +356,15 @@ class _ActionSheet extends StatelessWidget {
           children: items
               .map((item) => ListTile(
                     leading: Icon(item.icon, color: DashboardColors.primary),
-                    title: Text(item.label, style: DashboardText.body(size: 15, weight: FontWeight.w600, color: Colors.black87)),
+                    title: Row(
+                      children: [
+                        Text(item.label, style: DashboardText.body(size: 15, weight: FontWeight.w600, color: Colors.black87)),
+                        if (item.hasUnread) ...[
+                          const SizedBox(width: 7),
+                          Container(width: 8, height: 8, decoration: const BoxDecoration(color: DashboardColors.accent, shape: BoxShape.circle)),
+                        ],
+                      ],
+                    ),
                     onTap: () {
                       Navigator.of(context).pop();
                       item.onTap?.call();
@@ -371,6 +390,7 @@ class _MyJobsTabState extends State<_MyJobsTab> {
   late Future<List<Job>> _jobsFuture;
   String _statusFilter = 'All';
   String? _cancelingJobId;
+  String? _deletingJobId;
 
   static const _statuses = ['All', 'open', 'accepted', 'arrived', 'in_progress', 'completed', 'cancelled'];
 
@@ -384,7 +404,7 @@ class _MyJobsTabState extends State<_MyJobsTab> {
     final userId = supabase.auth.currentUser!.id;
     final rows = await supabase
         .from('jobs')
-        .select('*, worker:profiles!jobs_worker_id_fkey(first_name,last_name)')
+        .select('*, worker:profiles!jobs_worker_id_fkey(first_name,last_name), ratings(rating,comment)')
         .eq('client_id', userId)
         .order('created_at', ascending: false);
     return (rows as List).map((r) => Job.fromMap(r as Map<String, dynamic>)).toList();
@@ -416,6 +436,35 @@ class _MyJobsTabState extends State<_MyJobsTab> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
       if (mounted) setState(() => _cancelingJobId = null);
+    }
+  }
+
+  Future<void> _edit(Job job) async {
+    final edited = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => PostJobScreen(job: job)));
+    if (edited == true) await _refresh();
+  }
+
+  Future<void> _delete(Job job) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: "Delete this job posting?",
+      message: "This permanently removes \"${job.category}\" (Ref: ${jobRefNo(job.id)}) from your listings. This can't be undone.",
+      confirmLabel: "Delete",
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _deletingJobId = job.id);
+    try {
+      await supabase.from('jobs').delete().eq('id', job.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Job deleted.")));
+      await _refresh();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _deletingJobId = null);
     }
   }
 
@@ -486,7 +535,12 @@ class _MyJobsTabState extends State<_MyJobsTab> {
                           return _JobHistoryCard(
                             job: job,
                             canceling: _cancelingJobId == job.id,
+                            deleting: _deletingJobId == job.id,
                             onCancel: job.status == 'open' ? () => _cancel(job) : null,
+                            onEdit: job.status == 'open' ? () => _edit(job) : null,
+                            onDelete: job.status == 'open' ? () => _delete(job) : null,
+                            onChanged: _refresh,
+                            onTap: () => showJobDetailsSheet(context, job),
                           );
                         },
                       ),
@@ -502,20 +556,38 @@ class _MyJobsTabState extends State<_MyJobsTab> {
 class _JobHistoryCard extends StatelessWidget {
   final Job job;
   final bool canceling;
+  final bool deleting;
   final VoidCallback? onCancel;
-  const _JobHistoryCard({required this.job, this.canceling = false, this.onCancel});
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+  final VoidCallback onChanged;
+  final VoidCallback? onTap;
+  const _JobHistoryCard({
+    required this.job,
+    this.canceling = false,
+    this.deleting = false,
+    this.onCancel,
+    this.onEdit,
+    this.onDelete,
+    required this.onChanged,
+    this.onTap,
+  });
 
   String _paymentLabel(String status) => switch (status) {
-        'paid' => 'Paid',
+        'paid' => 'In Escrow',
         'refund_requested' => 'Refund Requested',
         'refunded' => 'Refunded',
+        'released' => 'Released',
         _ => status,
       };
 
   @override
   Widget build(BuildContext context) {
     final statusStyle = dashboardStatusStyle(job.status);
-    return Container(
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -564,6 +636,42 @@ class _JobHistoryCard extends StatelessWidget {
               ],
             ],
           ),
+          if (onEdit != null || onDelete != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (onEdit != null)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onEdit,
+                      icon: const Icon(Icons.edit_outlined, size: 15),
+                      label: Text("Edit", style: DashboardText.body(size: 12.5, weight: FontWeight.w600, color: DashboardColors.primary)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: DashboardColors.primary,
+                        side: BorderSide(color: DashboardColors.primary.withValues(alpha: 0.4)),
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                      ),
+                    ),
+                  ),
+                if (onEdit != null && onDelete != null) const SizedBox(width: 8),
+                if (onDelete != null)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: deleting ? null : onDelete,
+                      icon: deleting
+                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFC62828)))
+                          : const Icon(Icons.delete_outline, size: 15, color: Color(0xFFC62828)),
+                      label: Text("Delete", style: DashboardText.body(size: 12.5, weight: FontWeight.w600, color: const Color(0xFFC62828))),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFC62828),
+                        side: const BorderSide(color: Color(0xFFC62828), width: 1),
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
           if (onCancel != null) ...[
             const SizedBox(height: 10),
             SizedBox(
@@ -581,7 +689,10 @@ class _JobHistoryCard extends StatelessWidget {
               ),
             ),
           ],
+          const SizedBox(height: 10),
+          JobPaymentActions(job: job, onChanged: onChanged),
         ],
+      ),
       ),
     );
   }
@@ -830,22 +941,6 @@ String _formatMemberSince(String? iso) {
   return '${months[d.month - 1]} ${d.year}';
 }
 
-/// Formats digits into a PH mobile-style "0917 123 4567" grouping as the
-/// user types, capped at 11 digits.
-class _PhoneInputFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
-    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
-    final capped = digits.substring(0, digits.length > 11 ? 11 : digits.length);
-    final buffer = StringBuffer();
-    for (var i = 0; i < capped.length; i++) {
-      if (i == 4 || i == 7) buffer.write(' ');
-      buffer.write(capped[i]);
-    }
-    return TextEditingValue(text: buffer.toString(), selection: TextSelection.collapsed(offset: buffer.length));
-  }
-}
-
 class _ProfileTabState extends State<_ProfileTab> {
   late Future<_ProfileData> _profileFuture;
   final _firstNameCtrl = TextEditingController();
@@ -954,6 +1049,10 @@ class _ProfileTabState extends State<_ProfileTab> {
     }
     if (address.isEmpty) {
       setState(() => _infoError = "Address can't be empty.");
+      return;
+    }
+    if (_phoneCtrl.text.trim().isNotEmpty && !isValidPhMobile(_phoneCtrl.text)) {
+      setState(() => _infoError = phPhoneErrorMessage);
       return;
     }
     setState(() {
@@ -1166,7 +1265,7 @@ class _ProfileTabState extends State<_ProfileTab> {
                     TextField(
                       controller: _phoneCtrl,
                       keyboardType: TextInputType.phone,
-                      inputFormatters: [_PhoneInputFormatter()],
+                      inputFormatters: [PhPhoneInputFormatter()],
                       onChanged: (_) => setState(() {
                         _infoError = null;
                         _infoSuccess = null;

@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../main.dart';
 import '../../models/categories.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/validators.dart';
 import '../../widgets/site/hanap_button.dart';
 import '../../widgets/site/hanap_dialog.dart';
 import 'nbi_upload_screen.dart';
@@ -33,6 +34,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _lastNameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   String _skill = kCategories.first;
   String? _error;
@@ -45,6 +47,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _lastNameCtrl.dispose();
     _emailCtrl.dispose();
     _locationCtrl.dispose();
+    _phoneCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
   }
@@ -77,6 +80,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() => _error = "Location is required.");
       return;
     }
+    if (!isValidPhMobile(_phoneCtrl.text)) {
+      setState(() => _error = phPhoneErrorMessage);
+      return;
+    }
     if (_passCtrl.text.trim().length < 6) {
       setState(() => _error = "Password must be at least 6 characters.");
       return;
@@ -96,6 +103,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'first_name': _firstNameCtrl.text.trim(),
           'last_name': _lastNameCtrl.text.trim(),
           'location': _locationCtrl.text.trim(),
+          'phone': _phoneCtrl.text.trim(),
           if (_role == _Role.worker) 'skills': [_skill],
         },
       );
@@ -201,6 +209,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
             style: AppText.body(size: 14, color: AppColors.textPrimary),
             onChanged: (_) => setState(() => _error = null),
             decoration: hanapInputDecoration(label: "Location", hint: "City, Province"),
+          ),
+          const SizedBox(height: 14),
+
+          TextField(
+            controller: _phoneCtrl,
+            style: AppText.body(size: 14, color: AppColors.textPrimary),
+            keyboardType: TextInputType.phone,
+            inputFormatters: [PhPhoneInputFormatter()],
+            onChanged: (_) => setState(() => _error = null),
+            decoration: hanapInputDecoration(label: "Phone Number", hint: "09XX XXX XXXX"),
           ),
           const SizedBox(height: 14),
 

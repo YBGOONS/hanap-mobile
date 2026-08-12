@@ -1,9 +1,15 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../supabase_config.dart';
 import '../theme/app_theme.dart';
+import 'admin/admin_dashboard_screen.dart';
+import 'client/client_dashboard_screen.dart';
 import 'public/home_screen.dart';
+import 'public/nbi_upload_screen.dart';
+import 'public/pending_approval_screen.dart';
+import 'worker/worker_dashboard_screen.dart';
 
 /// First thing shown on app boot — kicks off Supabase.initialize() itself
 /// (rather than main() awaiting it before runApp()) so this branded splash
@@ -30,7 +36,52 @@ class _SplashScreenState extends State<SplashScreen> {
       Future.delayed(const Duration(milliseconds: 1600)),
     ]);
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+
+    // A refresh reloads the whole web app from scratch — Supabase persists
+    // the session in local storage, but nothing was routing back into it,
+    // so every refresh dumped a logged-in user onto the public homepage
+    // (looked exactly like being logged out, even though the session was
+    // still valid). Mirrors LoginScreen._handleLogin's role-based routing
+    // since a refresh never goes through that flow.
+    final session = Supabase.instance.client.auth.currentSession;
+    if (session == null) {
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+      return;
+    }
+
+    try {
+      final userId = session.user.id;
+      final profile = await Supabase.instance.client.from('profiles').select().eq('id', userId).single();
+      final role = profile['role'] as String;
+      final status = profile['status'] as String;
+      final nbiPath = profile['nbi_clearance_path'] as String?;
+      if (!mounted) return;
+
+      if (role == 'worker' && nbiPath == null) {
+        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => NbiUploadScreen(userId: userId)));
+        return;
+      }
+      if (role == 'worker' && status == 'pending') {
+        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const PendingApprovalScreen()));
+        return;
+      }
+      if (status == 'rejected' || (role == 'admin' && !kIsWeb)) {
+        await Supabase.instance.client.auth.signOut();
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+        return;
+      }
+
+      final dashboard = switch (role) {
+        'admin' => const AdminDashboardScreen(),
+        'worker' => const WorkerDashboardScreen(),
+        _ => const ClientDashboardScreen(),
+      };
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => dashboard));
+    } catch (_) {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
+    }
   }
 
   @override

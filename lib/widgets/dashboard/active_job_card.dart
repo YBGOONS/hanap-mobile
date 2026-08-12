@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../main.dart';
+import '../../models/job.dart';
 import '../../theme/dashboard_theme.dart';
 import 'dashboard_widgets.dart';
 
@@ -15,36 +17,16 @@ double _progressForStatus(String status) => switch (status) {
     };
 
 /// The client's single current job — title, worker, budget, location,
-/// status, progress bar, and payment-status-driven quick actions (Pay once
-/// completed, Request Refund once paid). Rating/"Approve Work" has no
-/// backing RPC yet (no ratings table — see project_missing_schema_audit
-/// memory), so it isn't shown here; only actions with a real RPC behind
-/// them are rendered.
+/// status, progress bar, and the escrow-driven payment/rating actions.
 class ActiveJobCard extends StatelessWidget {
-  final String jobId;
-  final String title;
-  final String workerName;
-  final double budget;
-  final String location;
-  final String status;
-  final String paymentStatus;
+  final Job job;
   final VoidCallback onChanged;
 
-  const ActiveJobCard({
-    super.key,
-    required this.jobId,
-    required this.title,
-    required this.workerName,
-    required this.budget,
-    required this.location,
-    required this.status,
-    required this.paymentStatus,
-    required this.onChanged,
-  });
+  const ActiveJobCard({super.key, required this.job, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    final statusStyle = dashboardStatusStyle(status);
+    final statusStyle = dashboardStatusStyle(job.status);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -62,23 +44,23 @@ class ActiveJobCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: Text(title, style: DashboardText.heading(size: 17, color: Colors.black87))),
-              DashboardStatusBadge(status: status),
+              Expanded(child: Text(job.category, style: DashboardText.heading(size: 17, color: Colors.black87))),
+              DashboardStatusBadge(status: job.status),
             ],
           ),
           const SizedBox(height: 12),
 
-          _InfoRow(icon: Icons.build_outlined, label: "Worker", value: workerName),
+          _InfoRow(icon: Icons.build_outlined, label: "Worker", value: job.workerName ?? "—"),
           const SizedBox(height: 6),
-          _InfoRow(icon: Icons.payments_outlined, label: "Budget", value: "₱${budget.toStringAsFixed(0)}"),
+          _InfoRow(icon: Icons.payments_outlined, label: "Budget", value: "₱${(job.budget ?? 0).toStringAsFixed(0)}"),
           const SizedBox(height: 6),
-          _InfoRow(icon: Icons.location_on_outlined, label: "Location", value: location),
+          _InfoRow(icon: Icons.location_on_outlined, label: "Location", value: job.location),
           const SizedBox(height: 16),
 
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
-              value: _progressForStatus(status),
+              value: _progressForStatus(job.status),
               minHeight: 6,
               backgroundColor: DashboardColors.border,
               valueColor: AlwaysStoppedAnimation(statusStyle.color),
@@ -86,7 +68,7 @@ class ActiveJobCard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          _QuickActions(jobId: jobId, status: status, paymentStatus: paymentStatus, onChanged: onChanged),
+          JobPaymentActions(job: job, onChanged: onChanged),
         ],
       ),
     );
@@ -112,51 +94,106 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-/// Payment-status-driven actions: Pay once the job is completed and unpaid,
-/// Request Refund once it's paid, or an informational note while a refund
-/// request is pending/resolved. Nothing shown while the job is still open.
-class _QuickActions extends StatefulWidget {
-  final String jobId;
-  final String status;
-  final String paymentStatus;
+/// Escrow-driven payment/rating actions for a job, shared by [ActiveJobCard]
+/// (Dashboard tab's spotlighted job) and the client's My Jobs list — a
+/// client can have more than one accepted-unpaid job at once, and only one
+/// gets the Dashboard spotlight, so every job card needs this, not just the
+/// spotlighted one.
+///
+/// Flow: Pay Now (accepted+unpaid) → escrow, arrival code shown, Request
+/// Refund available throughout → worker completes with photos → client
+/// reviews and either Confirms (releases payment, then can rate) or
+/// Requests a Refund instead (dispute). A denied refund auto-releases to
+/// the worker — the dispute is fully resolved either way, nothing is left
+/// stuck in escrow.
+class JobPaymentActions extends StatefulWidget {
+  final Job job;
   final VoidCallback onChanged;
 
-  const _QuickActions({required this.jobId, required this.status, required this.paymentStatus, required this.onChanged});
+  const JobPaymentActions({super.key, required this.job, required this.onChanged});
 
   @override
-  State<_QuickActions> createState() => _QuickActionsState();
+  State<JobPaymentActions> createState() => _JobPaymentActionsState();
 }
 
-class _QuickActionsState extends State<_QuickActions> {
+class _JobPaymentActionsState extends State<JobPaymentActions> {
   bool _loading = false;
+  bool _rating = false;
 
   Future<void> _pay() async {
+    final job = widget.job;
+    final confirmed = await showBookingSummaryDialog(
+      context,
+      workerName: job.workerName ?? "Worker",
+      category: job.category,
+      scheduledDate: job.scheduledDate,
+      budget: job.budget ?? 0,
+    );
+    if (!confirmed || !mounted) return;
+
     setState(() => _loading = true);
     try {
-      await supabase.rpc('mark_job_paid', params: {'job_id': widget.jobId});
-      widget.onChanged();
-    } on PostgrestException catch (e) {
+      // Real GCash checkout via PayMongo (see supabase/functions/create-gcash-payment)
+      // — this only opens the checkout, it doesn't mark the job paid.
+      // paymongo-webhook does that once PayMongo confirms the charge, so
+      // the client needs to pull-to-refresh after finishing checkout.
+      final response = await supabase.functions.invoke('create-gcash-payment', body: {'job_id': job.id});
+      final data = response.data as Map<String, dynamic>?;
+      final checkoutUrl = data?['checkout_url'] as String?;
+      if (checkoutUrl == null) {
+        throw Exception(data?['error'] ?? 'Could not start payment.');
+      }
+      await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Finish the GCash payment in the new tab, then pull down here to refresh.")),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Payment failed: $e")));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _requestRefund() async {
-    final reason = await showReasonDialog(
-      context,
-      title: "Request a refund",
-      hint: "Why are you requesting a refund?",
-      confirmLabel: "Submit",
-    );
-    if (reason == null || !mounted) return;
+    final result = await showRefundRequestDialog(context);
+    if (result == null || !mounted) return;
+
+    final bytes = result.file.bytes;
+    if (bytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Could not read that photo. Please try again.")));
+      return;
+    }
 
     setState(() => _loading = true);
     try {
-      await supabase.rpc('request_refund', params: {'job_id': widget.jobId, 'reason': reason});
+      final userId = supabase.auth.currentUser!.id;
+      final ext = (result.file.extension ?? 'jpg').toLowerCase();
+      final path = '$userId/${widget.job.id}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await supabase.storage.from('refund-evidence').uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
+
+      await supabase.rpc('request_refund', params: {'job_id': widget.job.id, 'reason': result.reason, 'photo_url': path});
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Refund requested. Waiting for admin review.")));
+      widget.onChanged();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } on StorageException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _confirmCompletion() async {
+    setState(() => _loading = true);
+    try {
+      await supabase.rpc('confirm_completion', params: {'job_id': widget.job.id});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Payment released to your worker!")));
       widget.onChanged();
     } on PostgrestException catch (e) {
       if (!mounted) return;
@@ -166,52 +203,227 @@ class _QuickActionsState extends State<_QuickActions> {
     }
   }
 
+  Future<void> _rateWorker() async {
+    final result = await showRatingDialog(context);
+    if (result == null || !mounted) return;
+
+    setState(() => _rating = true);
+    try {
+      await supabase.rpc('rate_job', params: {'job_id': widget.job.id, 'rating': result.rating, 'comment': result.comment.isEmpty ? null : result.comment});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Thanks for rating!")));
+      widget.onChanged();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _rating = false);
+    }
+  }
+
+  Widget _payButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 42,
+      child: ElevatedButton(
+        onPressed: _loading ? null : _pay,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: DashboardColors.primary,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        child: _loading
+            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            : Text("Pay Now", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
+      ),
+    );
+  }
+
+  Widget _otpNote() {
+    final otp = widget.job.arrivalOtp ?? "----";
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: DashboardColors.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: DashboardColors.primary.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.lock_clock_outlined, size: 15, color: DashboardColors.primary),
+              const SizedBox(width: 6),
+              Text("Arrival Code", style: DashboardText.body(size: 12, weight: FontWeight.w700, color: DashboardColors.primary)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(otp, style: DashboardText.heading(size: 26, color: DashboardColors.primary).copyWith(letterSpacing: 6)),
+          const SizedBox(height: 4),
+          Text("Share this with your worker when they arrive.", style: DashboardText.body(size: 11, color: DashboardColors.muted)),
+        ],
+      ),
+    );
+  }
+
+  Widget _rateWorkerButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 42,
+      child: OutlinedButton.icon(
+        onPressed: _rating ? null : _rateWorker,
+        icon: _rating
+            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: DashboardColors.accent))
+            : const Icon(Icons.star_border, size: 18, color: DashboardColors.accent),
+        label: Text("Rate Worker", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: DashboardColors.accent)),
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: DashboardColors.accent),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      ),
+    );
+  }
+
+  Widget _requestRefundButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 42,
+      child: OutlinedButton(
+        onPressed: _loading ? null : _requestRefund,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFFC62828),
+          side: const BorderSide(color: Color(0xFFC62828)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        child: _loading
+            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFC62828)))
+            : Text("Request Refund", style: DashboardText.body(size: 12, weight: FontWeight.w700)),
+      ),
+    );
+  }
+
+  Widget _completionReview() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 42,
+          child: ElevatedButton(
+            onPressed: _loading ? null : _confirmCompletion,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: DashboardColors.statusCompleted,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: _loading
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : Text("Confirm & Release Payment", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _requestRefundButton(),
+      ],
+    );
+  }
+
+  Widget _receipt() {
+    final job = widget.job;
+    final labor = job.budget ?? 0;
+    final fee = job.serviceFee ?? 0;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: DashboardColors.bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: DashboardColors.border)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Receipt", style: DashboardText.body(size: 12, weight: FontWeight.w700, color: DashboardColors.muted)),
+          const SizedBox(height: 8),
+          _ReceiptLine(label: "Worker's Labor Fee", value: labor),
+          _ReceiptLine(label: "HANAP Service Fee (10%)", value: fee),
+          const Divider(height: 18),
+          _ReceiptLine(label: "Total Paid", value: labor + fee, bold: true),
+          const SizedBox(height: 6),
+          Text("Worker received ₱${labor.toStringAsFixed(0)} — payment released.", style: DashboardText.body(size: 11, color: DashboardColors.statusCompleted)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (widget.paymentStatus == 'refund_requested') {
+    final job = widget.job;
+
+    if (job.paymentStatus == 'refunded') {
+      return _StatusNote(
+        icon: Icons.assignment_return_outlined,
+        text: job.refundAdminMessage == null ? "This job was refunded." : "Refunded: ${job.refundAdminMessage}",
+        color: DashboardColors.statusCancelled,
+      );
+    }
+    if (job.paymentStatus == 'refund_requested') {
       return const _StatusNote(icon: Icons.hourglass_top, text: "Refund requested — waiting for admin review.", color: DashboardColors.accent);
     }
-    if (widget.paymentStatus == 'refunded') {
-      return const _StatusNote(icon: Icons.check_circle_outline, text: "This job was refunded.", color: DashboardColors.statusCancelled);
+    // Payment happens right after acceptance — before the worker can even
+    // mark themselves 'arrived' (see verify_arrival_otp in schema.sql).
+    if (job.status == 'accepted' && job.paymentStatus == 'unpaid') {
+      return _payButton();
     }
-
-    if (widget.status == 'completed' && widget.paymentStatus == 'unpaid') {
-      return SizedBox(
-        width: double.infinity,
-        height: 42,
-        child: ElevatedButton(
-          onPressed: _loading ? null : _pay,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: DashboardColors.primary,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-          child: _loading
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : Text("Pay Now", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
-        ),
+    if (job.status == 'completed' && job.paymentStatus == 'paid') {
+      return _completionReview();
+    }
+    if (job.paymentStatus == 'paid') {
+      // Escrowed, job still in progress — refund is always available as a
+      // dispute path, and the arrival code is shown until the worker uses it.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (job.status == 'accepted') ...[
+            _otpNote(),
+            const SizedBox(height: 10),
+          ],
+          _requestRefundButton(),
+        ],
       );
     }
-
-    if (widget.paymentStatus == 'paid') {
-      return SizedBox(
-        width: double.infinity,
-        height: 42,
-        child: OutlinedButton(
-          onPressed: _loading ? null : _requestRefund,
-          style: OutlinedButton.styleFrom(
-            foregroundColor: DashboardColors.primary,
-            side: const BorderSide(color: DashboardColors.primary),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-          child: _loading
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: DashboardColors.primary))
-              : Text("Request Refund", style: DashboardText.body(size: 12, weight: FontWeight.w700)),
-        ),
+    if (job.paymentStatus == 'released') {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _receipt(),
+          const SizedBox(height: 10),
+          job.rating != null
+              ? const _StatusNote(icon: Icons.star, text: "You rated this job — booking complete.", color: DashboardColors.accent)
+              : _rateWorkerButton(),
+        ],
       );
     }
-
     return const SizedBox.shrink();
+  }
+}
+
+class _ReceiptLine extends StatelessWidget {
+  final String label;
+  final double value;
+  final bool bold;
+  const _ReceiptLine({required this.label, required this.value, this.bold = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = bold ? DashboardText.heading(size: 14, color: Colors.black87) : DashboardText.body(size: 12.5, color: Colors.black87);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: bold ? style : style.copyWith(color: DashboardColors.muted)),
+          Text("₱${value.toStringAsFixed(0)}", style: style),
+        ],
+      ),
+    );
   }
 }
 

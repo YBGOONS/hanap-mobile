@@ -5,6 +5,7 @@ import '../../main.dart';
 import '../../models/categories.dart';
 import '../../models/job.dart';
 import '../../theme/dashboard_theme.dart';
+import '../../utils/validators.dart';
 import '../../widgets/dashboard/dashboard_widgets.dart';
 import '../../widgets/dashboard/worker_job_card.dart';
 import '../public/home_screen.dart';
@@ -28,7 +29,9 @@ enum _Tab { dashboard, availableJobs, myJobs, earnings, profile }
 
 class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
   _Tab _tab = _Tab.dashboard;
-  bool _hasUnread = false;
+  bool _hasUnreadNotif = false;
+  bool _hasUnreadMessages = false;
+  bool get _hasUnread => _hasUnreadNotif || _hasUnreadMessages;
 
   @override
   void initState() {
@@ -40,21 +43,23 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
     final userId = supabase.auth.currentUser!.id;
 
     final notifRows = await supabase.from('notifications').select('id').eq('user_id', userId).isFilter('read_at', null).limit(1);
-    if ((notifRows as List).isNotEmpty) {
-      if (mounted) setState(() => _hasUnread = true);
-      return;
-    }
+    final hasUnreadNotif = (notifRows as List).isNotEmpty;
 
     final jobRows = await supabase.from('jobs').select('id').or('client_id.eq.$userId,worker_id.eq.$userId').not('worker_id', 'is', null);
     final jobIds = (jobRows as List).map((r) => r['id'] as String).toList();
-    if (jobIds.isEmpty) {
-      if (mounted) setState(() => _hasUnread = false);
-      return;
+    bool hasUnreadMessages = false;
+    if (jobIds.isNotEmpty) {
+      final msgRows =
+          await supabase.from('messages').select('id').inFilter('job_id', jobIds).neq('sender_id', userId).isFilter('read_at', null).limit(1);
+      hasUnreadMessages = (msgRows as List).isNotEmpty;
     }
 
-    final msgRows =
-        await supabase.from('messages').select('id').inFilter('job_id', jobIds).neq('sender_id', userId).isFilter('read_at', null).limit(1);
-    if (mounted) setState(() => _hasUnread = (msgRows as List).isNotEmpty);
+    if (mounted) {
+      setState(() {
+        _hasUnreadNotif = hasUnreadNotif;
+        _hasUnreadMessages = hasUnreadMessages;
+      });
+    }
   }
 
   void _openJobsSheet() {
@@ -64,8 +69,8 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (_) => _ActionSheet(
         items: [
-          (icon: Icons.list_alt_outlined, label: "Available Jobs", onTap: () => setState(() => _tab = _Tab.availableJobs)),
-          (icon: Icons.work_outline, label: "My Jobs", onTap: () => setState(() => _tab = _Tab.myJobs)),
+          (icon: Icons.list_alt_outlined, label: "Available Jobs", hasUnread: false, onTap: () => setState(() => _tab = _Tab.availableJobs)),
+          (icon: Icons.work_outline, label: "My Jobs", hasUnread: false, onTap: () => setState(() => _tab = _Tab.myJobs)),
         ],
       ),
     );
@@ -78,8 +83,8 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (_) => _ActionSheet(
         items: [
-          (icon: Icons.chat_bubble_outline, label: "Messages", onTap: () => _openInboxScreen(const ConversationsScreen())),
-          (icon: Icons.notifications_outlined, label: "Notifications", onTap: () => _openInboxScreen(const NotificationsScreen())),
+          (icon: Icons.chat_bubble_outline, label: "Messages", hasUnread: _hasUnreadMessages, onTap: () => _openInboxScreen(const ConversationsScreen())),
+          (icon: Icons.notifications_outlined, label: "Notifications", hasUnread: _hasUnreadNotif, onTap: () => _openInboxScreen(const NotificationsScreen())),
         ],
       ),
     );
@@ -141,7 +146,7 @@ class _WorkerDashboardScreenState extends State<WorkerDashboardScreen> {
 }
 
 class _ActionSheet extends StatelessWidget {
-  final List<({IconData icon, String label, VoidCallback? onTap})> items;
+  final List<({IconData icon, String label, bool hasUnread, VoidCallback? onTap})> items;
   const _ActionSheet({required this.items});
 
   @override
@@ -154,7 +159,15 @@ class _ActionSheet extends StatelessWidget {
           children: items
               .map((item) => ListTile(
                     leading: Icon(item.icon, color: DashboardColors.primary),
-                    title: Text(item.label, style: DashboardText.body(size: 15, weight: FontWeight.w600, color: Colors.black87)),
+                    title: Row(
+                      children: [
+                        Text(item.label, style: DashboardText.body(size: 15, weight: FontWeight.w600, color: Colors.black87)),
+                        if (item.hasUnread) ...[
+                          const SizedBox(width: 7),
+                          Container(width: 8, height: 8, decoration: const BoxDecoration(color: DashboardColors.accent, shape: BoxShape.circle)),
+                        ],
+                      ],
+                    ),
                     onTap: () {
                       Navigator.of(context).pop();
                       item.onTap?.call();
@@ -200,6 +213,8 @@ class _WorkerDashboardData {
   final int openCount;
   final int activeCount;
   final int completedCount;
+  final double? avgRating;
+  final int ratingCount;
 
   const _WorkerDashboardData({
     required this.firstName,
@@ -207,6 +222,8 @@ class _WorkerDashboardData {
     required this.openCount,
     required this.activeCount,
     required this.completedCount,
+    required this.avgRating,
+    required this.ratingCount,
   });
 }
 
@@ -235,6 +252,8 @@ class _WorkerDashboardTabState extends State<_WorkerDashboardTab> {
     final openRows = await supabase.from('jobs').select('id').eq('status', 'open');
     final myRows = await supabase.from('jobs').select('id, status').eq('worker_id', userId);
     final myList = (myRows as List).cast<Map<String, dynamic>>();
+    final ratingRows = await supabase.from('ratings').select('rating').eq('worker_id', userId);
+    final ratings = (ratingRows as List).map((r) => (r as Map<String, dynamic>)['rating'] as int).toList();
 
     return _WorkerDashboardData(
       firstName: profileRow['first_name'] as String,
@@ -242,6 +261,8 @@ class _WorkerDashboardTabState extends State<_WorkerDashboardTab> {
       openCount: (openRows as List).length,
       activeCount: myList.where((j) => j['status'] == 'accepted' || j['status'] == 'arrived' || j['status'] == 'in_progress').length,
       completedCount: myList.where((j) => j['status'] == 'completed').length,
+      avgRating: ratings.isEmpty ? null : ratings.reduce((a, b) => a + b) / ratings.length,
+      ratingCount: ratings.length,
     );
   }
 
@@ -353,6 +374,38 @@ class _WorkerDashboardTabState extends State<_WorkerDashboardTab> {
                       ),
                     ],
                   ],
+                ),
+                const SizedBox(height: 12),
+
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: DashboardColors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.star, color: DashboardColors.accent, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              data.avgRating != null ? data.avgRating!.toStringAsFixed(1) : "No ratings yet",
+                              style: DashboardText.heading(size: 16, color: Colors.black87),
+                            ),
+                            if (data.avgRating != null)
+                              Text(
+                                "${data.ratingCount} review${data.ratingCount == 1 ? '' : 's'}",
+                                style: DashboardText.body(size: 12, color: DashboardColors.muted),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -557,7 +610,7 @@ class _MyJobsTabState extends State<_MyJobsTab> {
     final userId = supabase.auth.currentUser!.id;
     final rows = await supabase
         .from('jobs')
-        .select('*, client:profiles!jobs_client_id_fkey(first_name,last_name)')
+        .select('*, client:profiles!jobs_client_id_fkey(first_name,last_name), ratings(rating,comment)')
         .eq('worker_id', userId)
         .order('created_at', ascending: false);
     return (rows as List).map((r) => Job.fromMap(r as Map<String, dynamic>)).toList();
@@ -597,6 +650,40 @@ class _MyJobsTabState extends State<_MyJobsTab> {
       await supabase.rpc('cancel_job', params: {'job_id': job.id, 'reason': reason});
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Job returned to the open pool.")));
+      await _refresh();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _actingOnJobId = null);
+    }
+  }
+
+  Future<void> _verifyOtp(Job job, String otp) async {
+    if (otp.trim().length != 4) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Enter the 4-digit code from the client.")));
+      return;
+    }
+    setState(() => _actingOnJobId = job.id);
+    try {
+      await supabase.rpc('verify_arrival_otp', params: {'job_id': job.id, 'otp': otp.trim()});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Arrival confirmed!")));
+      await _refresh();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _actingOnJobId = null);
+    }
+  }
+
+  Future<void> _completeJob(Job job) async {
+    setState(() => _actingOnJobId = job.id);
+    try {
+      await supabase.rpc('complete_job', params: {'job_id': job.id});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Marked complete! Waiting for the client to confirm.")));
       await _refresh();
     } on PostgrestException catch (e) {
       if (!mounted) return;
@@ -677,12 +764,47 @@ class _MyJobsTabState extends State<_MyJobsTab> {
     );
   }
 
+  Widget _lockedActionWithCancel({required Job job, required bool acting, required IconData icon, required String message}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _infoNote(icon: icon, message: message),
+        TextButton(
+          onPressed: acting ? null : () => _cancel(job),
+          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
+          child: Text("Can't do this job", style: DashboardText.body(size: 12, weight: FontWeight.w600, color: const Color(0xFFC62828))),
+        ),
+      ],
+    );
+  }
+
+  Widget _infoNote({required IconData icon, required String message}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: DashboardColors.bg,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: DashboardColors.border),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 15, color: DashboardColors.muted),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message, style: DashboardText.body(size: 12, color: DashboardColors.muted))),
+        ],
+      ),
+    );
+  }
+
   Widget _buildJobCard(Job job) {
     final acting = _actingOnJobId == job.id;
     Widget? actions;
 
     if (job.status == 'accepted') {
-      actions = _primaryActionWithCancel(job: job, acting: acting, label: "Mark Arrived", targetStatus: 'arrived');
+      actions = job.paymentStatus == 'paid'
+          ? _ArrivalOtpEntry(acting: acting, onVerify: (otp) => _verifyOtp(job, otp), onCancel: () => _cancel(job))
+          : _lockedActionWithCancel(job: job, acting: acting, icon: Icons.hourglass_top, message: "Waiting for the client to pay before you can head over.");
     } else if (job.status == 'arrived') {
       actions = _primaryActionWithCancel(job: job, acting: acting, label: "Start Job", targetStatus: 'in_progress');
     } else if (job.status == 'in_progress') {
@@ -691,40 +813,34 @@ class _MyJobsTabState extends State<_MyJobsTab> {
         actions = SizedBox(
           width: double.infinity,
           height: 42,
-          child: ElevatedButton(
-            onPressed: acting ? null : () => _updateStatus(job, 'completed'),
+          child: ElevatedButton.icon(
+            onPressed: acting ? null : () => _completeJob(job),
+            icon: acting
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.check_circle_outline, size: 17, color: Colors.white),
+            label: Text(acting ? "Completing..." : "Mark Completed", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
             style: ElevatedButton.styleFrom(
               backgroundColor: DashboardColors.statusCompleted,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            child: acting
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Text("Mark Completed", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
           ),
         );
       } else {
-        actions = Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: DashboardColors.bg,
-            borderRadius: BorderRadius.circular(7),
-            border: Border.all(color: DashboardColors.border),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.lock_outline, size: 15, color: DashboardColors.muted),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  "Scheduled for ${job.scheduledDate!.year}-${job.scheduledDate!.month.toString().padLeft(2, '0')}-${job.scheduledDate!.day.toString().padLeft(2, '0')}",
-                  style: DashboardText.body(size: 12, color: DashboardColors.muted),
-                ),
-              ),
-            ],
-          ),
+        actions = _infoNote(
+          icon: Icons.lock_outline,
+          message:
+              "Scheduled for ${job.scheduledDate!.year}-${job.scheduledDate!.month.toString().padLeft(2, '0')}-${job.scheduledDate!.day.toString().padLeft(2, '0')}",
         );
       }
+    } else if (job.status == 'completed') {
+      actions = switch (job.paymentStatus) {
+        'paid' => _infoNote(icon: Icons.hourglass_top, message: "Waiting for the client to review and confirm completion."),
+        'released' => _infoNote(icon: Icons.check_circle_outline, message: "Payment released — ₱${(job.budget ?? 0).toStringAsFixed(0)} paid to you."),
+        'refund_requested' => _infoNote(icon: Icons.report_gmailerrorred_outlined, message: "The client requested a refund — under admin review."),
+        'refunded' => _infoNote(icon: Icons.assignment_return_outlined, message: "This job was refunded to the client."),
+        _ => null,
+      };
     }
 
     return WorkerMyJobCard(
@@ -733,7 +849,76 @@ class _MyJobsTabState extends State<_MyJobsTab> {
       location: job.location,
       clientName: job.clientName,
       status: job.status,
+      rating: job.rating,
       actions: actions,
+      onTap: () => showJobDetailsSheet(context, job),
+    );
+  }
+}
+
+/// Worker's 4-digit arrival-code entry — the code the client sees in-app and
+/// hands over in person. A dedicated stateful widget (not inline in
+/// _buildJobCard) so the TextEditingController survives the parent's
+/// per-job rebuilds cleanly.
+class _ArrivalOtpEntry extends StatefulWidget {
+  final bool acting;
+  final ValueChanged<String> onVerify;
+  final VoidCallback onCancel;
+  const _ArrivalOtpEntry({required this.acting, required this.onVerify, required this.onCancel});
+
+  @override
+  State<_ArrivalOtpEntry> createState() => _ArrivalOtpEntryState();
+}
+
+class _ArrivalOtpEntryState extends State<_ArrivalOtpEntry> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                style: DashboardText.body(size: 16, weight: FontWeight.w700, color: Colors.black87),
+                decoration: dashboardInputDecoration(label: "Arrival Code", hint: "Ask the client").copyWith(counterText: ''),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 46,
+              child: ElevatedButton(
+                onPressed: widget.acting ? null : () => widget.onVerify(_controller.text),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DashboardColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: widget.acting
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text("Verify", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
+              ),
+            ),
+          ],
+        ),
+        TextButton(
+          onPressed: widget.acting ? null : widget.onCancel,
+          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
+          child: Text("Can't do this job", style: DashboardText.body(size: 12, weight: FontWeight.w600, color: const Color(0xFFC62828))),
+        ),
+      ],
     );
   }
 }
@@ -778,19 +963,23 @@ class _EarningsTabState extends State<_EarningsTab> {
 
     final txRows = ((await supabase
             .from('transactions')
-            .select('type, amount, created_at, job:jobs(category)')
+            .select('type, amount, worker_amount, created_at, job:jobs(category, payment_status)')
             .eq('worker_id', userId)
             .order('created_at', ascending: false)) as List)
         .cast<Map<String, dynamic>>();
 
-    final earned = txRows.where((t) => t['type'] == 'payment').fold<double>(0, (sum, t) => sum + (t['amount'] as num).toDouble());
-    final refunded = txRows.where((t) => t['type'] == 'refund').fold<double>(0, (sum, t) => sum + (t['amount'] as num).toDouble());
+    // Only count money that's actually been released — an escrowed
+    // ('paid') job's transaction row exists but the worker hasn't been
+    // paid out yet, and a refunded one never will be.
+    final earned = txRows
+        .where((t) => t['type'] == 'payment' && (t['job'] as Map<String, dynamic>?)?['payment_status'] == 'released')
+        .fold<double>(0, (sum, t) => sum + ((t['worker_amount'] as num?) ?? (t['amount'] as num)).toDouble());
 
     return _EarningsData(
       doneCount: jobRows.where((j) => j['status'] == 'completed').length,
       inProgressCount: jobRows.where((j) => j['status'] == 'accepted' || j['status'] == 'arrived' || j['status'] == 'in_progress').length,
       totalCount: jobRows.length,
-      totalEarned: earned - refunded,
+      totalEarned: earned,
       transactions: txRows,
     );
   }
@@ -890,9 +1079,11 @@ class _PaymentHistoryItem extends StatelessWidget {
     final createdAt = DateTime.tryParse(tx['created_at'] as String? ?? '');
     final dateLabel =
         createdAt == null ? '' : "${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}";
-    final amount = (tx['amount'] as num).toDouble();
     final isRefund = tx['type'] == 'refund';
+    final amount = isRefund ? (tx['amount'] as num).toDouble() : ((tx['worker_amount'] as num?) ?? (tx['amount'] as num)).toDouble();
     final job = tx['job'] as Map<String, dynamic>?;
+    final released = !isRefund && job?['payment_status'] == 'released';
+    final statusLabel = isRefund ? "Refunded" : (released ? "Released" : "In escrow");
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -910,12 +1101,12 @@ class _PaymentHistoryItem extends StatelessWidget {
               children: [
                 Text(job?['category'] as String? ?? '—', style: DashboardText.heading(size: 14, weight: FontWeight.w700, color: Colors.black87)),
                 const SizedBox(height: 3),
-                Text(dateLabel, style: DashboardText.body(size: 12, color: DashboardColors.muted)),
+                Text("$dateLabel · $statusLabel", style: DashboardText.body(size: 12, color: DashboardColors.muted)),
               ],
             ),
           ),
           Text(
-            "${isRefund ? '-' : '+'}₱${amount.toStringAsFixed(0)}",
+            "${isRefund ? '-' : (released ? '+' : '')}₱${amount.toStringAsFixed(0)}",
             style: DashboardText.heading(size: 15, color: isRefund ? const Color(0xFFC62828) : DashboardColors.statusCompleted),
           ),
         ],
@@ -936,6 +1127,7 @@ class _ProfileTab extends StatefulWidget {
 class _ProfileTabState extends State<_ProfileTab> {
   late Future<Map<String, dynamic>> _profileFuture;
   final _locationCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
   Set<String> _selectedSkills = {};
   bool _uploadingAvatar = false;
   bool _savingLocation = false;
@@ -954,6 +1146,7 @@ class _ProfileTabState extends State<_ProfileTab> {
   @override
   void dispose() {
     _locationCtrl.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
   }
 
@@ -961,6 +1154,7 @@ class _ProfileTabState extends State<_ProfileTab> {
     final userId = supabase.auth.currentUser!.id;
     final row = await supabase.from('profiles').select().eq('id', userId).single();
     _locationCtrl.text = row['location'] as String? ?? '';
+    _phoneCtrl.text = row['phone'] as String? ?? '';
     _selectedSkills = ((row['skills'] as List?)?.cast<String>() ?? const []).toSet();
     return row;
   }
@@ -1006,8 +1200,13 @@ class _ProfileTabState extends State<_ProfileTab> {
 
   Future<void> _saveLocation() async {
     final location = _locationCtrl.text.trim();
+    final phone = _phoneCtrl.text.trim();
     if (location.isEmpty) {
       setState(() => _locationError = "Location can't be empty.");
+      return;
+    }
+    if (!isValidPhMobile(phone)) {
+      setState(() => _locationError = phPhoneErrorMessage);
       return;
     }
     setState(() {
@@ -1017,11 +1216,11 @@ class _ProfileTabState extends State<_ProfileTab> {
     });
     try {
       final userId = supabase.auth.currentUser!.id;
-      await supabase.from('profiles').update({'location': location}).eq('id', userId);
+      await supabase.from('profiles').update({'location': location, 'phone': phone}).eq('id', userId);
       if (!mounted) return;
       setState(() {
         _savingLocation = false;
-        _locationSuccess = "Location updated.";
+        _locationSuccess = "Profile updated.";
       });
     } on PostgrestException catch (e) {
       if (!mounted) return;
@@ -1142,7 +1341,7 @@ class _ProfileTabState extends State<_ProfileTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Location", style: DashboardText.body(size: 12, weight: FontWeight.w700, color: DashboardColors.muted)),
+                    Text("Location & Phone", style: DashboardText.body(size: 12, weight: FontWeight.w700, color: DashboardColors.muted)),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _locationCtrl,
@@ -1152,6 +1351,18 @@ class _ProfileTabState extends State<_ProfileTab> {
                       }),
                       style: DashboardText.body(size: 14, color: Colors.black87),
                       decoration: dashboardInputDecoration(label: "Location", hint: "City, Province"),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      inputFormatters: [PhPhoneInputFormatter()],
+                      onChanged: (_) => setState(() {
+                        _locationError = null;
+                        _locationSuccess = null;
+                      }),
+                      style: DashboardText.body(size: 14, color: Colors.black87),
+                      decoration: dashboardInputDecoration(label: "Phone Number", hint: "09XX XXX XXXX"),
                     ),
                     if (_locationError != null) ...[
                       const SizedBox(height: 8),

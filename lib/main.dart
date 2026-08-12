@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'screens/client/payment_result_screen.dart';
 import 'screens/splash_screen.dart';
 import 'theme/app_theme.dart';
 
@@ -20,7 +21,20 @@ class HanapApp extends StatelessWidget {
       title: 'HANAP',
       debugShowCheckedModeBanner: false,
       theme: buildHanapTheme(),
-      home: const SplashScreen(),
+      // PayMongo redirects the browser straight to /payment-success or
+      // /payment-failed after GCash checkout — that's the actual initial
+      // route on that fresh page load, so it has to be handled here rather
+      // than always falling through to SplashScreen (which owns only '/').
+      onGenerateRoute: (settings) {
+        final uri = Uri.parse(settings.name ?? '/');
+        if (uri.path == '/payment-success' || uri.path == '/payment-failed') {
+          return MaterialPageRoute(
+            settings: settings,
+            builder: (_) => PaymentResultScreen(success: uri.path == '/payment-success', jobId: uri.queryParameters['job_id']),
+          );
+        }
+        return MaterialPageRoute(settings: settings, builder: (_) => const SplashScreen());
+      },
     );
   }
 }

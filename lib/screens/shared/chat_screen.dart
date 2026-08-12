@@ -97,11 +97,16 @@ class _ChatScreenState extends State<ChatScreen> {
                     _scrollCtrl.jumpTo(_scrollCtrl.position.maxScrollExtent);
                   }
                 });
+                final lastMineIndex = messages.lastIndexWhere((m) => m.senderId == _userId);
                 return ListView.builder(
                   controller: _scrollCtrl,
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
-                  itemBuilder: (context, i) => _MessageBubble(message: messages[i], isMine: messages[i].senderId == _userId),
+                  itemBuilder: (context, i) => _MessageBubble(
+                    message: messages[i],
+                    isMine: messages[i].senderId == _userId,
+                    showSeen: i == lastMineIndex && messages[i].readAt != null,
+                  ),
                 );
               },
             ),
@@ -116,32 +121,43 @@ class _ChatScreenState extends State<ChatScreen> {
 class _MessageBubble extends StatelessWidget {
   final Message message;
   final bool isMine;
-  const _MessageBubble({required this.message, required this.isMine});
+  final bool showSeen;
+  const _MessageBubble({required this.message, required this.isMine, this.showSeen = false});
 
   @override
   Widget build(BuildContext context) {
     final time = "${message.createdAt.hour.toString().padLeft(2, '0')}:${message.createdAt.minute.toString().padLeft(2, '0')}";
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: isMine ? DashboardColors.primary : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: isMine ? null : Border.all(color: DashboardColors.border),
+    return Column(
+      crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        Align(
+          alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: isMine ? DashboardColors.primary : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: isMine ? null : Border.all(color: DashboardColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(message.body, style: DashboardText.body(size: 14, color: isMine ? Colors.white : Colors.black87)),
+                const SizedBox(height: 4),
+                Text(time, style: DashboardText.body(size: 10, color: isMine ? Colors.white70 : DashboardColors.muted)),
+              ],
+            ),
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(message.body, style: DashboardText.body(size: 14, color: isMine ? Colors.white : Colors.black87)),
-            const SizedBox(height: 4),
-            Text(time, style: DashboardText.body(size: 10, color: isMine ? Colors.white70 : DashboardColors.muted)),
-          ],
-        ),
-      ),
+        if (showSeen)
+          Padding(
+            padding: const EdgeInsets.only(top: 3, right: 4),
+            child: Text("Seen", style: DashboardText.body(size: 10.5, weight: FontWeight.w600, color: DashboardColors.muted)),
+          ),
+        const SizedBox(height: 10),
+      ],
     );
   }
 }

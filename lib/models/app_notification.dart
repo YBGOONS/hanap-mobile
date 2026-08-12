@@ -27,4 +27,8 @@ class AppNotification {
       readAt: map['read_at'] != null ? DateTime.parse(map['read_at'] as String) : null,
     );
   }
+
+  AppNotification copyWith({DateTime? readAt}) {
+    return AppNotification(id: id, title: title, body: body, jobId: jobId, createdAt: createdAt, readAt: readAt ?? this.readAt);
+  }
 }
