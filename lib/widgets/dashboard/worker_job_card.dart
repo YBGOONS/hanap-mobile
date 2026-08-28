@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import '../../theme/dashboard_theme.dart';
 import 'job_step_progress.dart';
 
-String _formatDate(DateTime d) => "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+String _formatDate(DateTime d) =>
+    "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
 
 class _MetaRow extends StatelessWidget {
   final IconData icon;
@@ -16,7 +17,10 @@ class _MetaRow extends StatelessWidget {
       children: [
         Icon(icon, size: 13, color: DashboardColors.muted),
         const SizedBox(width: 4),
-        Text(text, style: DashboardText.body(size: 12, color: DashboardColors.muted)),
+        Text(
+          text,
+          style: DashboardText.body(size: 12, color: DashboardColors.muted),
+        ),
       ],
     );
   }
@@ -32,6 +36,7 @@ class WorkerAvailableJobCard extends StatelessWidget {
   final String? clientName;
   final DateTime? scheduledDate;
   final Widget? actions;
+  final VoidCallback? onTap;
 
   const WorkerAvailableJobCard({
     super.key,
@@ -42,57 +47,85 @@ class WorkerAvailableJobCard extends StatelessWidget {
     this.clientName,
     this.scheduledDate,
     this.actions,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isUrgent = scheduledDate != null && scheduledDate!.difference(DateTime.now()).inDays <= 2;
+    final isUrgent =
+        scheduledDate != null &&
+        scheduledDate!.difference(DateTime.now()).inDays <= 2;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isUrgent ? DashboardColors.accent.withValues(alpha: 0.4) : DashboardColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: Text(title, style: DashboardText.heading(size: 15, color: Colors.black87))),
-              if (budget != null)
-                Text("₱${budget!.toStringAsFixed(0)}", style: DashboardText.heading(size: 16, color: DashboardColors.accent)),
-            ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isUrgent
+                ? DashboardColors.accent.withValues(alpha: 0.4)
+                : DashboardColors.border,
           ),
-          const SizedBox(height: 6),
-          Text(
-            description,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: DashboardText.body(size: 12.5, color: DashboardColors.muted).copyWith(height: 1.4),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 12,
-            runSpacing: 6,
-            children: [
-              _MetaRow(icon: Icons.location_on_outlined, text: location),
-              if (clientName != null) _MetaRow(icon: Icons.person_outline, text: clientName!),
-              if (scheduledDate != null)
-                _MetaRow(
-                  icon: Icons.event_outlined,
-                  text: isUrgent ? "${_formatDate(scheduledDate!)} · urgent" : _formatDate(scheduledDate!),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: DashboardText.heading(
+                      size: 15,
+                      color: Colors.black87,
+                    ),
+                  ),
                 ),
-            ],
-          ),
-          if (actions != null) ...[
-            const SizedBox(height: 12),
-            actions!,
+                if (budget != null)
+                  Text(
+                    "₱${budget!.toStringAsFixed(0)}",
+                    style: DashboardText.heading(
+                      size: 16,
+                      color: DashboardColors.accent,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: DashboardText.body(
+                size: 12.5,
+                color: DashboardColors.muted,
+              ).copyWith(height: 1.4),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              children: [
+                _MetaRow(icon: Icons.location_on_outlined, text: location),
+                if (clientName != null)
+                  _MetaRow(icon: Icons.person_outline, text: clientName!),
+                if (scheduledDate != null)
+                  _MetaRow(
+                    icon: Icons.event_outlined,
+                    text: isUrgent
+                        ? "${_formatDate(scheduledDate!)} · urgent"
+                        : _formatDate(scheduledDate!),
+                  ),
+              ],
+            ),
+            if (actions != null) ...[const SizedBox(height: 12), actions!],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -141,9 +174,23 @@ class WorkerMyJobCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: Text(title, style: DashboardText.heading(size: 15, color: Colors.black87))),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: DashboardText.heading(
+                      size: 15,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
                 if (budget != null)
-                  Text("₱${budget!.toStringAsFixed(0)}", style: DashboardText.heading(size: 16, color: DashboardColors.accent)),
+                  Text(
+                    "₱${budget!.toStringAsFixed(0)}",
+                    style: DashboardText.heading(
+                      size: 16,
+                      color: DashboardColors.accent,
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 4),
@@ -152,16 +199,15 @@ class WorkerMyJobCard extends StatelessWidget {
               runSpacing: 4,
               children: [
                 _MetaRow(icon: Icons.location_on_outlined, text: location),
-                if (clientName != null) _MetaRow(icon: Icons.person_outline, text: clientName!),
-                if (rating != null) _MetaRow(icon: Icons.star, text: "$rating/5"),
+                if (clientName != null)
+                  _MetaRow(icon: Icons.person_outline, text: clientName!),
+                if (rating != null)
+                  _MetaRow(icon: Icons.star, text: "$rating/5"),
               ],
             ),
             const SizedBox(height: 14),
             JobStepProgress(status: status),
-            if (actions != null) ...[
-              const SizedBox(height: 14),
-              actions!,
-            ],
+            if (actions != null) ...[const SizedBox(height: 14), actions!],
           ],
         ),
       ),

@@ -872,6 +872,7 @@ class _AvailableJobsTabState extends State<_AvailableJobsTab> {
                                 location: job.location,
                                 clientName: job.clientName,
                                 scheduledDate: job.scheduledDate,
+                                onTap: () => showJobDetailsSheet(context, job),
                                 actions: SizedBox(
                                   width: double.infinity,
                                   height: 42,
