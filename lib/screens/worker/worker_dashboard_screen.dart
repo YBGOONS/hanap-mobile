@@ -518,7 +518,8 @@ class _WorkerDashboardTabState extends State<_WorkerDashboardTab> {
       child: FutureBuilder<_WorkerDashboardData>(
         future: _dataFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(
               child: CircularProgressIndicator(color: DashboardColors.primary),
             );
@@ -778,7 +779,8 @@ class _AvailableJobsTabState extends State<_AvailableJobsTab> {
       child: FutureBuilder<List<Job>>(
         future: _jobsFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(
               child: CircularProgressIndicator(color: DashboardColors.primary),
             );
@@ -1075,7 +1077,8 @@ class _MyJobsTabState extends State<_MyJobsTab> {
       child: FutureBuilder<List<Job>>(
         future: _jobsFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(
               child: CircularProgressIndicator(color: DashboardColors.primary),
             );
@@ -1556,7 +1559,8 @@ class _EarningsTabState extends State<_EarningsTab> {
       child: FutureBuilder<_EarningsData>(
         future: _dataFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(
               child: CircularProgressIndicator(color: DashboardColors.primary),
             );

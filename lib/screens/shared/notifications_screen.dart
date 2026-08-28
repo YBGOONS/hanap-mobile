@@ -110,7 +110,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         child: FutureBuilder<List<AppNotification>>(
           future: _future,
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
               return const Center(
                 child: CircularProgressIndicator(
                   color: DashboardColors.primary,
