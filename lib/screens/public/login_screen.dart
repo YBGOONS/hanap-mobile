@@ -24,7 +24,12 @@ import '../worker/worker_dashboard_screen.dart';
 ///   - otherwise (active client/worker/admin-on-web) → the matching dashboard
 class LoginScreen extends StatefulWidget {
   final VoidCallback onSwitchToRegister;
-  const LoginScreen({super.key, required this.onSwitchToRegister});
+  final VoidCallback onForgotPassword;
+  const LoginScreen({
+    super.key,
+    required this.onSwitchToRegister,
+    required this.onForgotPassword,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -70,11 +75,18 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final res = await supabase.auth.signInWithPassword(email: email, password: pass);
+      final res = await supabase.auth.signInWithPassword(
+        email: email,
+        password: pass,
+      );
       final userId = res.user?.id;
       if (userId == null) throw const AuthException('Login failed.');
 
-      final profile = await supabase.from('profiles').select().eq('id', userId).single();
+      final profile = await supabase
+          .from('profiles')
+          .select()
+          .eq('id', userId)
+          .single();
       final role = profile['role'] as String;
       final status = profile['status'] as String;
       final nbiPath = profile['nbi_clearance_path'] as String?;
@@ -102,7 +114,8 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) return;
         setState(() {
           _loading = false;
-          _error = "Your account application wasn't approved. Contact support for details.";
+          _error =
+              "Your account application wasn't approved. Contact support for details.";
         });
         return;
       }
@@ -159,12 +172,16 @@ class _LoginScreenState extends State<LoginScreen> {
       await supabase.auth.resend(type: OtpType.signup, email: email);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Confirmation email sent again. Check your inbox.")),
+        const SnackBar(
+          content: Text("Confirmation email sent again. Check your inbox."),
+        ),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Couldn't resend right now. Please try again shortly.")),
+        const SnackBar(
+          content: Text("Couldn't resend right now. Please try again shortly."),
+        ),
       );
     } finally {
       if (mounted) setState(() => _resending = false);
@@ -186,7 +203,10 @@ class _LoginScreenState extends State<LoginScreen> {
               style: AppText.heading(size: 22),
               children: const [
                 TextSpan(text: "han"),
-                TextSpan(text: "ap", style: TextStyle(color: AppColors.gold)),
+                TextSpan(
+                  text: "ap",
+                  style: TextStyle(color: AppColors.gold),
+                ),
               ],
             ),
           ),
@@ -235,7 +255,31 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 8),
+
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                widget.onForgotPassword();
+              },
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                "Forgot password?",
+                style: AppText.body(
+                  size: 13,
+                  weight: FontWeight.w600,
+                  color: AppColors.gold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
 
           if (_error != null) HanapErrorBanner(message: _error!),
           if (_showResend) ...[
@@ -245,7 +289,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: _resending ? null : _resendConfirmation,
                 child: Text(
                   _resending ? "Sending..." : "Resend confirmation email",
-                  style: AppText.body(size: 13, weight: FontWeight.w600, color: AppColors.gold),
+                  style: AppText.body(
+                    size: 13,
+                    weight: FontWeight.w600,
+                    color: AppColors.gold,
+                  ),
                 ),
               ),
             ),

@@ -8,6 +8,7 @@ import '../../widgets/site/hanap_button.dart';
 import '../../widgets/site/hanap_dialog.dart';
 import '../../widgets/site/hanap_widgets.dart';
 import '../../widgets/site/particle_background.dart';
+import 'forgot_password_screen.dart';
 import 'login_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'register_screen.dart';
@@ -84,11 +85,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openLogin() => showHanapDialog(
     context,
-    (_) => LoginScreen(onSwitchToRegister: _openRegister),
+    (_) => LoginScreen(
+      onSwitchToRegister: _openRegister,
+      onForgotPassword: _openForgotPassword,
+    ),
   );
   void _openRegister() => showHanapDialog(
     context,
     (_) => RegisterScreen(onSwitchToLogin: _openLogin),
+  );
+  void _openForgotPassword() => showHanapDialog(
+    context,
+    (_) => ForgotPasswordScreen(onSwitchToLogin: _openLogin),
   );
 
   void _toggleMenu() => setState(() => _menuOpen = !_menuOpen);
