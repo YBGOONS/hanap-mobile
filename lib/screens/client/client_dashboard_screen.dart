@@ -52,7 +52,11 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
   Future<void> _loadFirstName() async {
     final userId = supabase.auth.currentUser?.id;
     if (userId == null) return;
-    final row = await supabase.from('profiles').select('first_name').eq('id', userId).single();
+    final row = await supabase
+        .from('profiles')
+        .select('first_name')
+        .eq('id', userId)
+        .single();
     if (!mounted) return;
     setState(() => _firstName = row['first_name'] as String);
   }
@@ -60,15 +64,29 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
   Future<void> _checkUnread() async {
     final userId = supabase.auth.currentUser!.id;
 
-    final notifRows = await supabase.from('notifications').select('id').eq('user_id', userId).isFilter('read_at', null).limit(1);
+    final notifRows = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id', userId)
+        .isFilter('read_at', null)
+        .limit(1);
     final hasUnreadNotif = (notifRows as List).isNotEmpty;
 
-    final jobRows = await supabase.from('jobs').select('id').or('client_id.eq.$userId,worker_id.eq.$userId').not('worker_id', 'is', null);
+    final jobRows = await supabase
+        .from('jobs')
+        .select('id')
+        .or('client_id.eq.$userId,worker_id.eq.$userId')
+        .not('worker_id', 'is', null);
     final jobIds = (jobRows as List).map((r) => r['id'] as String).toList();
     bool hasUnreadMessages = false;
     if (jobIds.isNotEmpty) {
-      final msgRows =
-          await supabase.from('messages').select('id').inFilter('job_id', jobIds).neq('sender_id', userId).isFilter('read_at', null).limit(1);
+      final msgRows = await supabase
+          .from('messages')
+          .select('id')
+          .inFilter('job_id', jobIds)
+          .neq('sender_id', userId)
+          .isFilter('read_at', null)
+          .limit(1);
       hasUnreadMessages = (msgRows as List).isNotEmpty;
     }
 
@@ -84,18 +102,32 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (_) => _ActionSheet(
         items: [
-          (icon: Icons.add_circle_outline, label: "Post a Job", hasUnread: false, onTap: _postJob),
-          (icon: Icons.list_alt_outlined, label: "My Jobs", hasUnread: false, onTap: () => setState(() => _tab = _Tab.myJobs)),
+          (
+            icon: Icons.add_circle_outline,
+            label: "Post a Job",
+            hasUnread: false,
+            onTap: _postJob,
+          ),
+          (
+            icon: Icons.list_alt_outlined,
+            label: "My Jobs",
+            hasUnread: false,
+            onTap: () => setState(() => _tab = _Tab.myJobs),
+          ),
         ],
       ),
     );
   }
 
   Future<void> _postJob() async {
-    final posted = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => const PostJobScreen()));
+    final posted = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => const PostJobScreen()));
     if (posted == true) {
       setState(() {
         _dashboardRefreshTick++;
@@ -108,11 +140,23 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (_) => _ActionSheet(
         items: [
-          (icon: Icons.chat_bubble_outline, label: "Messages", hasUnread: _hasUnreadMessages, onTap: () => _openInboxScreen(const ConversationsScreen())),
-          (icon: Icons.notifications_outlined, label: "Notifications", hasUnread: _hasUnreadNotif, onTap: () => _openInboxScreen(const NotificationsScreen())),
+          (
+            icon: Icons.chat_bubble_outline,
+            label: "Messages",
+            hasUnread: _hasUnreadMessages,
+            onTap: () => _openInboxScreen(const ConversationsScreen()),
+          ),
+          (
+            icon: Icons.notifications_outlined,
+            label: "Notifications",
+            hasUnread: _hasUnreadNotif,
+            onTap: () => _openInboxScreen(const NotificationsScreen()),
+          ),
         ],
       ),
     );
@@ -124,31 +168,55 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
   }
 
   Widget _content() => switch (_tab) {
-        _Tab.dashboard => _DashboardTab(key: ValueKey(_dashboardRefreshTick)),
-        _Tab.myJobs => const _MyJobsTab(),
-        _Tab.workers => const _WorkersTab(),
-        _Tab.profile => const _ProfileTab(),
-      };
+    _Tab.dashboard => _DashboardTab(key: ValueKey(_dashboardRefreshTick)),
+    _Tab.myJobs => const _MyJobsTab(),
+    _Tab.workers => const _WorkersTab(),
+    _Tab.profile => const _ProfileTab(),
+  };
 
   List<SidebarDestination> _sidebarDestinations() => [
-        SidebarDestination(icon: Icons.home_outlined, label: "Dashboard", selected: _tab == _Tab.dashboard, onTap: () => setState(() => _tab = _Tab.dashboard)),
-        SidebarDestination(icon: Icons.add_circle_outline, label: "Post a Job", onTap: _postJob),
-        SidebarDestination(icon: Icons.work_outline, label: "My Jobs", selected: _tab == _Tab.myJobs, onTap: () => setState(() => _tab = _Tab.myJobs)),
-        SidebarDestination(icon: Icons.engineering_outlined, label: "Workers", selected: _tab == _Tab.workers, onTap: () => setState(() => _tab = _Tab.workers)),
-        SidebarDestination(
-          icon: Icons.chat_bubble_outline,
-          label: "Messages",
-          trailing: _hasUnreadMessages ? const _UnreadDot() : null,
-          onTap: () => _openInboxScreen(const ConversationsScreen()),
-        ),
-        SidebarDestination(
-          icon: Icons.notifications_outlined,
-          label: "Notifications",
-          trailing: _hasUnreadNotif ? const _UnreadDot() : null,
-          onTap: () => _openInboxScreen(const NotificationsScreen()),
-        ),
-        SidebarDestination(icon: Icons.person_outline, label: "Profile", selected: _tab == _Tab.profile, onTap: () => setState(() => _tab = _Tab.profile)),
-      ];
+    SidebarDestination(
+      icon: Icons.home_outlined,
+      label: "Dashboard",
+      selected: _tab == _Tab.dashboard,
+      onTap: () => setState(() => _tab = _Tab.dashboard),
+    ),
+    SidebarDestination(
+      icon: Icons.add_circle_outline,
+      label: "Post a Job",
+      onTap: _postJob,
+    ),
+    SidebarDestination(
+      icon: Icons.work_outline,
+      label: "My Jobs",
+      selected: _tab == _Tab.myJobs,
+      onTap: () => setState(() => _tab = _Tab.myJobs),
+    ),
+    SidebarDestination(
+      icon: Icons.engineering_outlined,
+      label: "Workers",
+      selected: _tab == _Tab.workers,
+      onTap: () => setState(() => _tab = _Tab.workers),
+    ),
+    SidebarDestination(
+      icon: Icons.chat_bubble_outline,
+      label: "Messages",
+      trailing: _hasUnreadMessages ? const _UnreadDot() : null,
+      onTap: () => _openInboxScreen(const ConversationsScreen()),
+    ),
+    SidebarDestination(
+      icon: Icons.notifications_outlined,
+      label: "Notifications",
+      trailing: _hasUnreadNotif ? const _UnreadDot() : null,
+      onTap: () => _openInboxScreen(const NotificationsScreen()),
+    ),
+    SidebarDestination(
+      icon: Icons.person_outline,
+      label: "Profile",
+      selected: _tab == _Tab.profile,
+      onTap: () => setState(() => _tab = _Tab.profile),
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -160,7 +228,12 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
             backgroundColor: DashboardColors.bg,
             body: Row(
               children: [
-                DashboardSidebar(greeting: _firstName == null ? "Client Portal" : "Hi, $_firstName", destinations: _sidebarDestinations()),
+                DashboardSidebar(
+                  greeting: _firstName == null
+                      ? "Client Portal"
+                      : "Hi, $_firstName",
+                  destinations: _sidebarDestinations(),
+                ),
                 Expanded(child: content),
               ],
             ),
@@ -195,11 +268,27 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
               }
             },
             items: [
-              const BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: "Dashboard"),
-              const BottomNavigationBarItem(icon: Icon(Icons.work_outline), label: "Jobs"),
-              const BottomNavigationBarItem(icon: Icon(Icons.engineering_outlined), label: "Workers"),
-              BottomNavigationBarItem(icon: _InboxIcon(hasUnread: _hasUnread), label: "Inbox"),
-              const BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: "Profile"),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.home_outlined),
+                activeIcon: Icon(Icons.home),
+                label: "Dashboard",
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.work_outline),
+                label: "Jobs",
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.engineering_outlined),
+                label: "Workers",
+              ),
+              BottomNavigationBarItem(
+                icon: _InboxIcon(hasUnread: _hasUnread),
+                label: "Inbox",
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.person_outline),
+                label: "Profile",
+              ),
             ],
           ),
         );
@@ -214,7 +303,14 @@ class _UnreadDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(width: 8, height: 8, decoration: const BoxDecoration(color: DashboardColors.accent, shape: BoxShape.circle));
+    return Container(
+      width: 8,
+      height: 8,
+      decoration: const BoxDecoration(
+        color: DashboardColors.accent,
+        shape: BoxShape.circle,
+      ),
+    );
   }
 }
 
@@ -236,7 +332,10 @@ class _InboxIcon extends StatelessWidget {
             child: Container(
               width: 8,
               height: 8,
-              decoration: const BoxDecoration(color: DashboardColors.accent, shape: BoxShape.circle),
+              decoration: const BoxDecoration(
+                color: DashboardColors.accent,
+                shape: BoxShape.circle,
+              ),
             ),
           ),
       ],
@@ -281,14 +380,22 @@ class _DashboardTabState extends State<_DashboardTab> {
   Future<_DashboardData> _load() async {
     final userId = supabase.auth.currentUser!.id;
 
-    final profileRow = await supabase.from('profiles').select('first_name').eq('id', userId).single();
+    final profileRow = await supabase
+        .from('profiles')
+        .select('first_name')
+        .eq('id', userId)
+        .single();
 
     final jobRows = await supabase
         .from('jobs')
-        .select('*, worker:profiles!jobs_worker_id_fkey(first_name,last_name), ratings(rating,comment)')
+        .select(
+          '*, worker:profiles!jobs_worker_id_fkey(first_name,last_name), ratings(rating,comment)',
+        )
         .eq('client_id', userId)
         .order('created_at', ascending: false);
-    final jobs = (jobRows as List).map((r) => Job.fromMap(r as Map<String, dynamic>)).toList();
+    final jobs = (jobRows as List)
+        .map((r) => Job.fromMap(r as Map<String, dynamic>))
+        .toList();
 
     // Actively moving jobs (paying/arriving/working) take priority over a
     // completed-but-idle one — otherwise an old completed job with nothing
@@ -296,7 +403,9 @@ class _DashboardTabState extends State<_DashboardTab> {
     // attention right now, just for being more recently created.
     Job? activeJob;
     for (final j in jobs) {
-      if (j.status == 'accepted' || j.status == 'arrived' || j.status == 'in_progress') {
+      if (j.status == 'accepted' ||
+          j.status == 'arrived' ||
+          j.status == 'in_progress') {
         activeJob = j;
         break;
       }
@@ -304,7 +413,10 @@ class _DashboardTabState extends State<_DashboardTab> {
     if (activeJob == null) {
       for (final j in jobs) {
         if (j.status != 'completed') continue;
-        final awaitingAction = j.paymentStatus == 'paid' || j.paymentStatus == 'refund_requested' || (j.paymentStatus == 'released' && j.rating == null);
+        final awaitingAction =
+            j.paymentStatus == 'paid' ||
+            j.paymentStatus == 'refund_requested' ||
+            (j.paymentStatus == 'released' && j.rating == null);
         if (awaitingAction) {
           activeJob = j;
           break;
@@ -314,7 +426,14 @@ class _DashboardTabState extends State<_DashboardTab> {
 
     return _DashboardData(
       firstName: profileRow['first_name'] as String,
-      activeCount: jobs.where((j) => j.status == 'accepted' || j.status == 'arrived' || j.status == 'in_progress').length,
+      activeCount: jobs
+          .where(
+            (j) =>
+                j.status == 'accepted' ||
+                j.status == 'arrived' ||
+                j.status == 'in_progress',
+          )
+          .length,
       completedCount: jobs.where((j) => j.status == 'completed').length,
       openCount: jobs.where((j) => j.status == 'open').length,
       activeJob: activeJob,
@@ -337,22 +456,39 @@ class _DashboardTabState extends State<_DashboardTab> {
         future: _dataFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: DashboardColors.primary));
+            return const Center(
+              child: CircularProgressIndicator(color: DashboardColors.primary),
+            );
           }
           if (snapshot.hasError) {
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
-                DashboardStateMessage(title: "Couldn't load the dashboard.", message: "${snapshot.error}"),
+                DashboardStateMessage(
+                  title: "Couldn't load the dashboard.",
+                  message: "${snapshot.error}",
+                ),
               ],
             );
           }
 
           final data = snapshot.data!;
           final stats = [
-            (label: "Active Jobs", value: "${data.activeCount}", color: DashboardColors.statActive),
-            (label: "Completed", value: "${data.completedCount}", color: DashboardColors.statCompleted),
-            (label: "Open", value: "${data.openCount}", color: DashboardColors.statOpen),
+            (
+              label: "Active Jobs",
+              value: "${data.activeCount}",
+              color: DashboardColors.statActive,
+            ),
+            (
+              label: "Completed",
+              value: "${data.completedCount}",
+              color: DashboardColors.statCompleted,
+            ),
+            (
+              label: "Open",
+              value: "${data.openCount}",
+              color: DashboardColors.statOpen,
+            ),
           ];
 
           return SingleChildScrollView(
@@ -373,10 +509,20 @@ class _DashboardTabState extends State<_DashboardTab> {
                     for (var i = 0; i < stats.length; i++) ...[
                       if (i != 0) const SizedBox(width: 10),
                       Expanded(
-                        child: DashboardStatCard(value: stats[i].value, label: stats[i].label, accentColor: stats[i].color)
-                            .animate(delay: (i * 80).ms)
-                            .fadeIn(duration: 280.ms)
-                            .slideY(begin: 0.15, end: 0, duration: 280.ms, curve: Curves.easeOut),
+                        child:
+                            DashboardStatCard(
+                                  value: stats[i].value,
+                                  label: stats[i].label,
+                                  accentColor: stats[i].color,
+                                )
+                                .animate(delay: (i * 80).ms)
+                                .fadeIn(duration: 280.ms)
+                                .slideY(
+                                  begin: 0.15,
+                                  end: 0,
+                                  duration: 280.ms,
+                                  curve: Curves.easeOut,
+                                ),
                       ),
                     ],
                   ],
@@ -389,16 +535,34 @@ class _DashboardTabState extends State<_DashboardTab> {
                   const EmptyActiveJobState(),
                 const SizedBox(height: 24),
 
-                Text("Recent Jobs", style: DashboardText.heading(size: 15, color: Colors.black87)),
+                Text(
+                  "Recent Jobs",
+                  style: DashboardText.heading(size: 15, color: Colors.black87),
+                ),
                 const SizedBox(height: 10),
                 if (data.recentJobs.isEmpty)
-                  Text("You haven't posted any jobs yet.", style: DashboardText.body(size: 13, color: DashboardColors.muted))
+                  Text(
+                    "You haven't posted any jobs yet.",
+                    style: DashboardText.body(
+                      size: 13,
+                      color: DashboardColors.muted,
+                    ),
+                  )
                 else
                   for (var i = 0; i < data.recentJobs.length; i++)
-                    RecentJobListItem(title: data.recentJobs[i].category, location: data.recentJobs[i].location, status: data.recentJobs[i].status)
+                    RecentJobListItem(
+                          title: data.recentJobs[i].category,
+                          location: data.recentJobs[i].location,
+                          status: data.recentJobs[i].status,
+                        )
                         .animate(delay: (150 + i * 60).ms)
                         .fadeIn(duration: 260.ms)
-                        .slideX(begin: 0.05, end: 0, duration: 260.ms, curve: Curves.easeOut),
+                        .slideX(
+                          begin: 0.05,
+                          end: 0,
+                          duration: 260.ms,
+                          curve: Curves.easeOut,
+                        ),
               ],
             ),
           );
@@ -409,7 +573,10 @@ class _DashboardTabState extends State<_DashboardTab> {
 }
 
 class _ActionSheet extends StatelessWidget {
-  final List<({IconData icon, String label, bool hasUnread, VoidCallback? onTap})> items;
+  final List<
+    ({IconData icon, String label, bool hasUnread, VoidCallback? onTap})
+  >
+  items;
   const _ActionSheet({required this.items});
 
   @override
@@ -420,22 +587,38 @@ class _ActionSheet extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: items
-              .map((item) => ListTile(
-                    leading: Icon(item.icon, color: DashboardColors.primary),
-                    title: Row(
-                      children: [
-                        Text(item.label, style: DashboardText.body(size: 15, weight: FontWeight.w600, color: Colors.black87)),
-                        if (item.hasUnread) ...[
-                          const SizedBox(width: 7),
-                          Container(width: 8, height: 8, decoration: const BoxDecoration(color: DashboardColors.accent, shape: BoxShape.circle)),
-                        ],
+              .map(
+                (item) => ListTile(
+                  leading: Icon(item.icon, color: DashboardColors.primary),
+                  title: Row(
+                    children: [
+                      Text(
+                        item.label,
+                        style: DashboardText.body(
+                          size: 15,
+                          weight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      if (item.hasUnread) ...[
+                        const SizedBox(width: 7),
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: DashboardColors.accent,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
                       ],
-                    ),
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      item.onTap?.call();
-                    },
-                  ))
+                    ],
+                  ),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    item.onTap?.call();
+                  },
+                ),
+              )
               .toList(),
         ),
       ),
@@ -458,7 +641,15 @@ class _MyJobsTabState extends State<_MyJobsTab> {
   String? _cancelingJobId;
   String? _deletingJobId;
 
-  static const _statuses = ['All', 'open', 'accepted', 'arrived', 'in_progress', 'completed', 'cancelled'];
+  static const _statuses = [
+    'All',
+    'open',
+    'accepted',
+    'arrived',
+    'in_progress',
+    'completed',
+    'cancelled',
+  ];
 
   @override
   void initState() {
@@ -470,10 +661,14 @@ class _MyJobsTabState extends State<_MyJobsTab> {
     final userId = supabase.auth.currentUser!.id;
     final rows = await supabase
         .from('jobs')
-        .select('*, worker:profiles!jobs_worker_id_fkey(first_name,last_name), ratings(rating,comment)')
+        .select(
+          '*, worker:profiles!jobs_worker_id_fkey(first_name,last_name), ratings(rating,comment)',
+        )
         .eq('client_id', userId)
         .order('created_at', ascending: false);
-    return (rows as List).map((r) => Job.fromMap(r as Map<String, dynamic>)).toList();
+    return (rows as List)
+        .map((r) => Job.fromMap(r as Map<String, dynamic>))
+        .toList();
   }
 
   Future<void> _refresh() async {
@@ -493,20 +688,29 @@ class _MyJobsTabState extends State<_MyJobsTab> {
 
     setState(() => _cancelingJobId = job.id);
     try {
-      await supabase.rpc('cancel_open_job', params: {'job_id': job.id, 'reason': reason});
+      await supabase.rpc(
+        'cancel_open_job',
+        params: {'job_id': job.id, 'reason': reason},
+      );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Job cancelled.")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Job cancelled.")));
       await _refresh();
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
       if (mounted) setState(() => _cancelingJobId = null);
     }
   }
 
   Future<void> _edit(Job job) async {
-    final edited = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => PostJobScreen(job: job)));
+    final edited = await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => PostJobScreen(job: job)));
     if (edited == true) await _refresh();
   }
 
@@ -514,7 +718,8 @@ class _MyJobsTabState extends State<_MyJobsTab> {
     final confirmed = await showConfirmDialog(
       context,
       title: "Delete this job posting?",
-      message: "This permanently removes \"${job.category}\" (Ref: ${jobRefNo(job.id)}) from your listings. This can't be undone.",
+      message:
+          "This permanently removes \"${job.category}\" (Ref: ${jobRefNo(job.id)}) from your listings. This can't be undone.",
       confirmLabel: "Delete",
       destructive: true,
     );
@@ -524,11 +729,15 @@ class _MyJobsTabState extends State<_MyJobsTab> {
     try {
       await supabase.from('jobs').delete().eq('id', job.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Job deleted.")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Job deleted.")));
       await _refresh();
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
       if (mounted) setState(() => _deletingJobId = null);
     }
@@ -543,53 +752,78 @@ class _MyJobsTabState extends State<_MyJobsTab> {
         future: _jobsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: DashboardColors.primary));
+            return const Center(
+              child: CircularProgressIndicator(color: DashboardColors.primary),
+            );
           }
           if (snapshot.hasError) {
             return SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              child: DashboardStateMessage(title: "Couldn't load your jobs.", message: "${snapshot.error}"),
+              child: DashboardStateMessage(
+                title: "Couldn't load your jobs.",
+                message: "${snapshot.error}",
+              ),
             );
           }
 
           final allJobs = snapshot.data ?? [];
-          final jobs = _statusFilter == 'All' ? allJobs : allJobs.where((j) => j.status == _statusFilter).toList();
+          final jobs = _statusFilter == 'All'
+              ? allJobs
+              : allJobs.where((j) => j.status == _statusFilter).toList();
 
           return Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Text("My Jobs", style: DashboardText.heading(size: 18, color: Colors.black87)),
-              ),
-              if (allJobs.isNotEmpty)
-                SizedBox(
-                  height: 40,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                    itemCount: _statuses.length,
-                    separatorBuilder: (context, index) => const SizedBox(width: 8),
-                    itemBuilder: (context, i) {
-                      final s = _statuses[i];
-                      final selected = s == _statusFilter;
-                      return ChoiceChip(
-                        label: Text(s == 'All' ? s : dashboardStatusStyle(s).label),
-                        selected: selected,
-                        onSelected: (_) => setState(() => _statusFilter = s),
-                        selectedColor: DashboardColors.primary,
-                        backgroundColor: Colors.white,
-                        side: BorderSide(color: selected ? DashboardColors.primary : DashboardColors.border),
-                        labelStyle: DashboardText.body(size: 12, weight: FontWeight.w600, color: selected ? Colors.white : Colors.black87),
-                      );
-                    },
-                  ),
+                child: Text(
+                  "My Jobs",
+                  style: DashboardText.heading(size: 18, color: Colors.black87),
                 ),
+              ),
+              SizedBox(
+                height: 40,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
+                  itemCount: _statuses.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final s = _statuses[i];
+                    final selected = s == _statusFilter;
+                    return ChoiceChip(
+                      label: Text(
+                        s == 'All' ? s : dashboardStatusStyle(s).label,
+                      ),
+                      selected: selected,
+                      onSelected: (_) => setState(() => _statusFilter = s),
+                      selectedColor: DashboardColors.primary,
+                      backgroundColor: Colors.white,
+                      side: BorderSide(
+                        color: selected
+                            ? DashboardColors.primary
+                            : DashboardColors.border,
+                      ),
+                      labelStyle: DashboardText.body(
+                        size: 12,
+                        weight: FontWeight.w600,
+                        color: selected ? Colors.white : Colors.black87,
+                      ),
+                    );
+                  },
+                ),
+              ),
               Expanded(
                 child: jobs.isEmpty
                     ? SingleChildScrollView(
                         physics: const AlwaysScrollableScrollPhysics(),
                         child: DashboardStateMessage(
-                          title: allJobs.isEmpty ? "You haven't posted any jobs yet." : "No jobs in this status.",
+                          title: allJobs.isEmpty
+                              ? "You haven't posted any jobs yet."
+                              : "No jobs in this status.",
                         ),
                       )
                     : ListView.builder(
@@ -599,15 +833,29 @@ class _MyJobsTabState extends State<_MyJobsTab> {
                         itemBuilder: (context, i) {
                           final job = jobs[i];
                           return _JobHistoryCard(
-                            job: job,
-                            canceling: _cancelingJobId == job.id,
-                            deleting: _deletingJobId == job.id,
-                            onCancel: job.status == 'open' ? () => _cancel(job) : null,
-                            onEdit: job.status == 'open' ? () => _edit(job) : null,
-                            onDelete: job.status == 'open' ? () => _delete(job) : null,
-                            onChanged: _refresh,
-                            onTap: () => showJobDetailsSheet(context, job),
-                          ).animate(delay: (i.clamp(0, 6) * 60).ms).fadeIn(duration: 260.ms).slideY(begin: 0.06, end: 0, duration: 260.ms, curve: Curves.easeOut);
+                                job: job,
+                                canceling: _cancelingJobId == job.id,
+                                deleting: _deletingJobId == job.id,
+                                onCancel: job.status == 'open'
+                                    ? () => _cancel(job)
+                                    : null,
+                                onEdit: job.status == 'open'
+                                    ? () => _edit(job)
+                                    : null,
+                                onDelete: job.status == 'open'
+                                    ? () => _delete(job)
+                                    : null,
+                                onChanged: _refresh,
+                                onTap: () => showJobDetailsSheet(context, job),
+                              )
+                              .animate(delay: (i.clamp(0, 6) * 60).ms)
+                              .fadeIn(duration: 260.ms)
+                              .slideY(
+                                begin: 0.06,
+                                end: 0,
+                                duration: 260.ms,
+                                curve: Curves.easeOut,
+                              );
                         },
                       ),
               ),
@@ -640,12 +888,12 @@ class _JobHistoryCard extends StatelessWidget {
   });
 
   String _paymentLabel(String status) => switch (status) {
-        'paid' => 'In Escrow',
-        'refund_requested' => 'Refund Requested',
-        'refunded' => 'Refunded',
-        'released' => 'Paid',
-        _ => status,
-      };
+    'paid' => 'In Escrow',
+    'refund_requested' => 'Refund Requested',
+    'refunded' => 'Refunded',
+    'released' => 'Paid',
+    _ => status,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -654,111 +902,193 @@ class _JobHistoryCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: DashboardColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: Text(job.category, style: DashboardText.heading(size: 15, color: Colors.black87))),
-              if (job.budget != null)
-                Text("₱${job.budget!.toStringAsFixed(0)}", style: DashboardText.heading(size: 15, color: DashboardColors.accent)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            children: [
-              _MetaText(icon: Icons.location_on_outlined, text: job.location),
-              if (job.workerName != null) _MetaText(icon: Icons.build_outlined, text: job.workerName!),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: statusStyle.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
-                child: Text(statusStyle.label, style: DashboardText.body(size: 11, weight: FontWeight.w700, color: statusStyle.color)),
-              ),
-              if (job.paymentStatus != 'unpaid') ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: DashboardColors.muted.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: DashboardColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
                   child: Text(
-                    _paymentLabel(job.paymentStatus),
-                    style: DashboardText.body(size: 11, weight: FontWeight.w700, color: DashboardColors.muted),
+                    job.category,
+                    style: DashboardText.heading(
+                      size: 15,
+                      color: Colors.black87,
+                    ),
                   ),
                 ),
+                if (job.budget != null)
+                  Text(
+                    "₱${job.budget!.toStringAsFixed(0)}",
+                    style: DashboardText.heading(
+                      size: 15,
+                      color: DashboardColors.accent,
+                    ),
+                  ),
               ],
-            ],
-          ),
-          if (onEdit != null || onDelete != null) ...[
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                _MetaText(icon: Icons.location_on_outlined, text: job.location),
+                if (job.workerName != null)
+                  _MetaText(icon: Icons.build_outlined, text: job.workerName!),
+              ],
+            ),
             const SizedBox(height: 10),
             Row(
               children: [
-                if (onEdit != null)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: onEdit,
-                      icon: const Icon(Icons.edit_outlined, size: 15),
-                      label: Text("Edit", style: DashboardText.body(size: 12.5, weight: FontWeight.w600, color: DashboardColors.primary)),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: DashboardColors.primary,
-                        side: BorderSide(color: DashboardColors.primary.withValues(alpha: 0.4)),
-                        padding: const EdgeInsets.symmetric(vertical: 9),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusStyle.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    statusStyle.label,
+                    style: DashboardText.body(
+                      size: 11,
+                      weight: FontWeight.w700,
+                      color: statusStyle.color,
+                    ),
+                  ),
+                ),
+                if (job.paymentStatus != 'unpaid') ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: DashboardColors.muted.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      _paymentLabel(job.paymentStatus),
+                      style: DashboardText.body(
+                        size: 11,
+                        weight: FontWeight.w700,
+                        color: DashboardColors.muted,
                       ),
                     ),
                   ),
-                if (onEdit != null && onDelete != null) const SizedBox(width: 8),
-                if (onDelete != null)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: deleting ? null : onDelete,
-                      icon: deleting
-                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFC62828)))
-                          : const Icon(Icons.delete_outline, size: 15, color: Color(0xFFC62828)),
-                      label: Text("Delete", style: DashboardText.body(size: 12.5, weight: FontWeight.w600, color: const Color(0xFFC62828))),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFC62828),
-                        side: const BorderSide(color: Color(0xFFC62828), width: 1),
-                        padding: const EdgeInsets.symmetric(vertical: 9),
-                      ),
-                    ),
-                  ),
+                ],
               ],
             ),
-          ],
-          if (onCancel != null) ...[
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: canceling ? null : onCancel,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: DashboardColors.muted,
-                  side: BorderSide(color: DashboardColors.border),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                ),
-                child: canceling
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : Text("Cancel Job", style: DashboardText.body(size: 13, weight: FontWeight.w600, color: DashboardColors.muted)),
+            if (onEdit != null || onDelete != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  if (onEdit != null)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: onEdit,
+                        icon: const Icon(Icons.edit_outlined, size: 15),
+                        label: Text(
+                          "Edit",
+                          style: DashboardText.body(
+                            size: 12.5,
+                            weight: FontWeight.w600,
+                            color: DashboardColors.primary,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: DashboardColors.primary,
+                          side: BorderSide(
+                            color: DashboardColors.primary.withValues(
+                              alpha: 0.4,
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                        ),
+                      ),
+                    ),
+                  if (onEdit != null && onDelete != null)
+                    const SizedBox(width: 8),
+                  if (onDelete != null)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: deleting ? null : onDelete,
+                        icon: deleting
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Color(0xFFC62828),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.delete_outline,
+                                size: 15,
+                                color: Color(0xFFC62828),
+                              ),
+                        label: Text(
+                          "Delete",
+                          style: DashboardText.body(
+                            size: 12.5,
+                            weight: FontWeight.w600,
+                            color: const Color(0xFFC62828),
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFC62828),
+                          side: const BorderSide(
+                            color: Color(0xFFC62828),
+                            width: 1,
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-            ),
+            ],
+            if (onCancel != null) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: canceling ? null : onCancel,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: DashboardColors.muted,
+                    side: BorderSide(color: DashboardColors.border),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                  child: canceling
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(
+                          "Cancel Job",
+                          style: DashboardText.body(
+                            size: 13,
+                            weight: FontWeight.w600,
+                            color: DashboardColors.muted,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            JobPaymentActions(job: job, onChanged: onChanged),
           ],
-          const SizedBox(height: 10),
-          JobPaymentActions(job: job, onChanged: onChanged),
-        ],
-      ),
+        ),
       ),
     );
   }
@@ -776,7 +1106,10 @@ class _MetaText extends StatelessWidget {
       children: [
         Icon(icon, size: 13, color: DashboardColors.muted),
         const SizedBox(width: 4),
-        Text(text, style: DashboardText.body(size: 12, color: DashboardColors.muted)),
+        Text(
+          text,
+          style: DashboardText.body(size: 12, color: DashboardColors.muted),
+        ),
       ],
     );
   }
@@ -802,8 +1135,12 @@ class _WorkersTabState extends State<_WorkersTab> {
   }
 
   Future<List<Map<String, dynamic>>> _load() async {
-    final rows =
-        await supabase.from('profiles').select().eq('role', 'worker').eq('status', 'active').order('created_at', ascending: false);
+    final rows = await supabase
+        .from('profiles')
+        .select()
+        .eq('role', 'worker')
+        .eq('status', 'active')
+        .order('created_at', ascending: false);
     return (rows as List).cast<Map<String, dynamic>>();
   }
 
@@ -822,12 +1159,17 @@ class _WorkersTabState extends State<_WorkersTab> {
         future: _workersFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: DashboardColors.primary));
+            return const Center(
+              child: CircularProgressIndicator(color: DashboardColors.primary),
+            );
           }
           if (snapshot.hasError) {
             return SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              child: DashboardStateMessage(title: "Couldn't load workers.", message: "${snapshot.error}"),
+              child: DashboardStateMessage(
+                title: "Couldn't load workers.",
+                message: "${snapshot.error}",
+              ),
             );
           }
 
@@ -840,48 +1182,73 @@ class _WorkersTabState extends State<_WorkersTab> {
           final skillList = ['All', ...skills.toList()..sort()];
           final workers = _skillFilter == 'All'
               ? allWorkers
-              : allWorkers.where((w) => ((w['skills'] as List?)?.cast<String>() ?? const []).contains(_skillFilter)).toList();
+              : allWorkers
+                    .where(
+                      (w) =>
+                          ((w['skills'] as List?)?.cast<String>() ?? const [])
+                              .contains(_skillFilter),
+                    )
+                    .toList();
 
           return Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Text("Workers", style: DashboardText.heading(size: 18, color: Colors.black87)),
-              ),
-              if (skills.isNotEmpty)
-                SizedBox(
-                  height: 40,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                    itemCount: skillList.length,
-                    separatorBuilder: (context, index) => const SizedBox(width: 8),
-                    itemBuilder: (context, i) {
-                      final s = skillList[i];
-                      final selected = s == _skillFilter;
-                      return ChoiceChip(
-                        label: Text(s),
-                        selected: selected,
-                        onSelected: (_) => setState(() => _skillFilter = s),
-                        selectedColor: DashboardColors.primary,
-                        backgroundColor: Colors.white,
-                        side: BorderSide(color: selected ? DashboardColors.primary : DashboardColors.border),
-                        labelStyle: DashboardText.body(size: 12, weight: FontWeight.w600, color: selected ? Colors.white : Colors.black87),
-                      );
-                    },
-                  ),
+                child: Text(
+                  "Workers",
+                  style: DashboardText.heading(size: 18, color: Colors.black87),
                 ),
+              ),
+              SizedBox(
+                height: 40,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
+                  itemCount: skillList.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final s = skillList[i];
+                    final selected = s == _skillFilter;
+                    return ChoiceChip(
+                      label: Text(s),
+                      selected: selected,
+                      onSelected: (_) => setState(() => _skillFilter = s),
+                      selectedColor: DashboardColors.primary,
+                      backgroundColor: Colors.white,
+                      side: BorderSide(
+                        color: selected
+                            ? DashboardColors.primary
+                            : DashboardColors.border,
+                      ),
+                      labelStyle: DashboardText.body(
+                        size: 12,
+                        weight: FontWeight.w600,
+                        color: selected ? Colors.white : Colors.black87,
+                      ),
+                    );
+                  },
+                ),
+              ),
               Expanded(
                 child: workers.isEmpty
                     ? SingleChildScrollView(
                         physics: const AlwaysScrollableScrollPhysics(),
-                        child: DashboardStateMessage(title: allWorkers.isEmpty ? "No workers yet." : "No workers with this skill."),
+                        child: DashboardStateMessage(
+                          title: allWorkers.isEmpty
+                              ? "No workers yet."
+                              : "No workers with this skill.",
+                        ),
                       )
                     : ListView.builder(
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                         itemCount: workers.length,
-                        itemBuilder: (context, i) => _WorkerCard(worker: workers[i]),
+                        itemBuilder: (context, i) =>
+                            _WorkerCard(worker: workers[i]),
                       ),
               ),
             ],
@@ -901,7 +1268,9 @@ class _WorkerCard extends StatelessWidget {
     final firstName = worker['first_name'] as String? ?? '';
     final lastName = worker['last_name'] as String? ?? '';
     final name = "$firstName $lastName".trim();
-    final initials = "${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}".toUpperCase();
+    final initials =
+        "${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}"
+            .toUpperCase();
     final avatarUrl = worker['avatar_url'] as String?;
     final location = worker['location'] as String? ?? '—';
     final available = worker['available'] as bool? ?? false;
@@ -922,7 +1291,12 @@ class _WorkerCard extends StatelessWidget {
             radius: 24,
             backgroundColor: DashboardColors.primary,
             backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
-            child: avatarUrl == null ? Text(initials, style: DashboardText.heading(size: 16, color: Colors.white)) : null,
+            child: avatarUrl == null
+                ? Text(
+                    initials,
+                    style: DashboardText.heading(size: 16, color: Colors.white),
+                  )
+                : null,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -931,12 +1305,24 @@ class _WorkerCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Expanded(child: Text(name, style: DashboardText.heading(size: 15, color: Colors.black87))),
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: DashboardText.heading(
+                          size: 15,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
                     Container(
                       width: 8,
                       height: 8,
-                      decoration:
-                          BoxDecoration(color: available ? DashboardColors.statusCompleted : DashboardColors.muted, shape: BoxShape.circle),
+                      decoration: BoxDecoration(
+                        color: available
+                            ? DashboardColors.statusCompleted
+                            : DashboardColors.muted,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -944,7 +1330,9 @@ class _WorkerCard extends StatelessWidget {
                       style: DashboardText.body(
                         size: 11,
                         weight: FontWeight.w600,
-                        color: available ? DashboardColors.statusCompleted : DashboardColors.muted,
+                        color: available
+                            ? DashboardColors.statusCompleted
+                            : DashboardColors.muted,
                       ),
                     ),
                   ],
@@ -957,11 +1345,25 @@ class _WorkerCard extends StatelessWidget {
                     spacing: 6,
                     runSpacing: 6,
                     children: skills
-                        .map((s) => Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(color: DashboardColors.bg, borderRadius: BorderRadius.circular(20)),
-                              child: Text(s, style: DashboardText.body(size: 11, color: DashboardColors.muted)),
-                            ))
+                        .map(
+                          (s) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: DashboardColors.bg,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              s,
+                              style: DashboardText.body(
+                                size: 11,
+                                color: DashboardColors.muted,
+                              ),
+                            ),
+                          ),
+                        )
                         .toList(),
                   ),
                 ],
@@ -987,7 +1389,11 @@ class _ProfileStats {
   final int posted;
   final int completed;
   final int active;
-  const _ProfileStats({required this.posted, required this.completed, required this.active});
+  const _ProfileStats({
+    required this.posted,
+    required this.completed,
+    required this.active,
+  });
 }
 
 class _ProfileData {
@@ -1001,8 +1407,18 @@ String _formatMemberSince(String? iso) {
   final d = DateTime.tryParse(iso);
   if (d == null) return '—';
   const months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
   ];
   return '${months[d.month - 1]} ${d.year}';
 }
@@ -1045,8 +1461,15 @@ class _ProfileTabState extends State<_ProfileTab> {
 
   Future<_ProfileData> _load() async {
     final userId = supabase.auth.currentUser!.id;
-    final row = await supabase.from('profiles').select().eq('id', userId).single();
-    final jobRows = await supabase.from('jobs').select('status').eq('client_id', userId);
+    final row = await supabase
+        .from('profiles')
+        .select()
+        .eq('id', userId)
+        .single();
+    final jobRows = await supabase
+        .from('jobs')
+        .select('status')
+        .eq('client_id', userId);
     final jobs = (jobRows as List).cast<Map<String, dynamic>>();
 
     _firstNameCtrl.text = row['first_name'] as String? ?? '';
@@ -1059,7 +1482,14 @@ class _ProfileTabState extends State<_ProfileTab> {
       stats: _ProfileStats(
         posted: jobs.length,
         completed: jobs.where((j) => j['status'] == 'completed').length,
-        active: jobs.where((j) => j['status'] == 'accepted' || j['status'] == 'arrived' || j['status'] == 'in_progress').length,
+        active: jobs
+            .where(
+              (j) =>
+                  j['status'] == 'accepted' ||
+                  j['status'] == 'arrived' ||
+                  j['status'] == 'in_progress',
+            )
+            .length,
       ),
     );
   }
@@ -1081,13 +1511,22 @@ class _ProfileTabState extends State<_ProfileTab> {
       final ext = (file.extension ?? 'jpg').toLowerCase();
       final path = '$userId/avatar.$ext';
 
-      await supabase.storage.from('avatars').uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
+      await supabase.storage
+          .from('avatars')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: const FileOptions(upsert: true),
+          );
       final url = supabase.storage.from('avatars').getPublicUrl(path);
       // Same path every re-upload (upsert), so cache-bust the URL we store —
       // otherwise NetworkImage/browser caching keeps showing the old photo.
       final bustedUrl = "$url?t=${DateTime.now().millisecondsSinceEpoch}";
 
-      await supabase.from('profiles').update({'avatar_url': bustedUrl}).eq('id', userId);
+      await supabase
+          .from('profiles')
+          .update({'avatar_url': bustedUrl})
+          .eq('id', userId);
 
       if (!mounted) return;
       setState(() {
@@ -1097,11 +1536,15 @@ class _ProfileTabState extends State<_ProfileTab> {
     } on StorageException catch (e) {
       if (!mounted) return;
       setState(() => _uploadingAvatar = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (!mounted) return;
       setState(() => _uploadingAvatar = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Upload failed. Please try again.")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Upload failed. Please try again.")),
+      );
     }
   }
 
@@ -1117,7 +1560,8 @@ class _ProfileTabState extends State<_ProfileTab> {
       setState(() => _infoError = "Address can't be empty.");
       return;
     }
-    if (_phoneCtrl.text.trim().isNotEmpty && !isValidPhMobile(_phoneCtrl.text)) {
+    if (_phoneCtrl.text.trim().isNotEmpty &&
+        !isValidPhMobile(_phoneCtrl.text)) {
       setState(() => _infoError = phPhoneErrorMessage);
       return;
     }
@@ -1128,12 +1572,17 @@ class _ProfileTabState extends State<_ProfileTab> {
     });
     try {
       final userId = supabase.auth.currentUser!.id;
-      await supabase.from('profiles').update({
-        'first_name': firstName,
-        'last_name': lastName,
-        'phone': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-        'location': address,
-      }).eq('id', userId);
+      await supabase
+          .from('profiles')
+          .update({
+            'first_name': firstName,
+            'last_name': lastName,
+            'phone': _phoneCtrl.text.trim().isEmpty
+                ? null
+                : _phoneCtrl.text.trim(),
+            'location': address,
+          })
+          .eq('id', userId);
       if (!mounted) return;
       setState(() {
         _savingInfo = false;
@@ -1159,7 +1608,9 @@ class _ProfileTabState extends State<_ProfileTab> {
       return;
     }
     if (newPass.length < 6) {
-      setState(() => _passwordError = "New password must be at least 6 characters.");
+      setState(
+        () => _passwordError = "New password must be at least 6 characters.",
+      );
       return;
     }
     if (newPass != confirm) {
@@ -1187,7 +1638,10 @@ class _ProfileTabState extends State<_ProfileTab> {
       if (!mounted) return;
       setState(() {
         _changingPassword = false;
-        _passwordError = e.message.toLowerCase().contains('invalid login credentials') ? "Current password is incorrect." : e.message;
+        _passwordError =
+            e.message.toLowerCase().contains('invalid login credentials')
+            ? "Current password is incorrect."
+            : e.message;
       });
     } catch (e) {
       if (!mounted) return;
@@ -1213,12 +1667,17 @@ class _ProfileTabState extends State<_ProfileTab> {
       future: _profileFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(color: DashboardColors.primary));
+          return const Center(
+            child: CircularProgressIndicator(color: DashboardColors.primary),
+          );
         }
         if (snapshot.hasError) {
           return SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            child: DashboardStateMessage(title: "Couldn't load your profile.", message: "${snapshot.error}"),
+            child: DashboardStateMessage(
+              title: "Couldn't load your profile.",
+              message: "${snapshot.error}",
+            ),
           );
         }
 
@@ -1226,7 +1685,9 @@ class _ProfileTabState extends State<_ProfileTab> {
         final stats = snapshot.data!.stats;
         final firstName = p['first_name'] as String? ?? '';
         final lastName = p['last_name'] as String? ?? '';
-        final initials = "${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}".toUpperCase();
+        final initials =
+            "${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}"
+                .toUpperCase();
         final avatarUrl = _avatarUrlOverride ?? p['avatar_url'] as String?;
 
         return SingleChildScrollView(
@@ -1243,14 +1704,26 @@ class _ProfileTabState extends State<_ProfileTab> {
                         CircleAvatar(
                           radius: 44,
                           backgroundColor: DashboardColors.primary,
-                          backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
-                          child: avatarUrl == null ? Text(initials, style: DashboardText.heading(size: 26, color: Colors.white)) : null,
+                          backgroundImage: avatarUrl != null
+                              ? NetworkImage(avatarUrl)
+                              : null,
+                          child: avatarUrl == null
+                              ? Text(
+                                  initials,
+                                  style: DashboardText.heading(
+                                    size: 26,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : null,
                         ),
                         Positioned(
                           right: 0,
                           bottom: 0,
                           child: InkWell(
-                            onTap: _uploadingAvatar ? null : _pickAndUploadAvatar,
+                            onTap: _uploadingAvatar
+                                ? null
+                                : _pickAndUploadAvatar,
                             borderRadius: BorderRadius.circular(20),
                             child: Container(
                               width: 32,
@@ -1258,24 +1731,43 @@ class _ProfileTabState extends State<_ProfileTab> {
                               decoration: BoxDecoration(
                                 color: DashboardColors.accent,
                                 shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 2),
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
                               ),
                               child: _uploadingAvatar
                                   ? const Padding(
                                       padding: EdgeInsets.all(7),
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
                                     )
-                                  : const Icon(Icons.camera_alt, size: 15, color: Colors.white),
+                                  : const Icon(
+                                      Icons.camera_alt,
+                                      size: 15,
+                                      color: Colors.white,
+                                    ),
                             ),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Text("$firstName $lastName", style: DashboardText.heading(size: 18, color: Colors.black87)),
+                    Text(
+                      "$firstName $lastName",
+                      style: DashboardText.heading(
+                        size: 18,
+                        color: Colors.black87,
+                      ),
+                    ),
                     Text(
                       "Client · Member since ${_formatMemberSince(p['created_at'] as String?)}",
-                      style: DashboardText.body(size: 13, color: DashboardColors.muted),
+                      style: DashboardText.body(
+                        size: 13,
+                        color: DashboardColors.muted,
+                      ),
                     ),
                   ],
                 ),
@@ -1284,22 +1776,50 @@ class _ProfileTabState extends State<_ProfileTab> {
 
               Row(
                 children: [
-                  Expanded(child: DashboardStatCard(value: "${stats.posted}", label: "Jobs Posted", accentColor: DashboardColors.statOpen)),
+                  Expanded(
+                    child: DashboardStatCard(
+                      value: "${stats.posted}",
+                      label: "Jobs Posted",
+                      accentColor: DashboardColors.statOpen,
+                    ),
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: DashboardStatCard(value: "${stats.completed}", label: "Completed", accentColor: DashboardColors.statCompleted)),
+                  Expanded(
+                    child: DashboardStatCard(
+                      value: "${stats.completed}",
+                      label: "Completed",
+                      accentColor: DashboardColors.statCompleted,
+                    ),
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: DashboardStatCard(value: "${stats.active}", label: "Active", accentColor: DashboardColors.statActive)),
+                  Expanded(
+                    child: DashboardStatCard(
+                      value: "${stats.active}",
+                      label: "Active",
+                      accentColor: DashboardColors.statActive,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 24),
 
               Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: DashboardColors.border)),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: DashboardColors.border),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Personal Info", style: DashboardText.heading(size: 15, color: Colors.black87)),
+                    Text(
+                      "Personal Info",
+                      style: DashboardText.heading(
+                        size: 15,
+                        color: Colors.black87,
+                      ),
+                    ),
                     const SizedBox(height: 14),
                     TextField(
                       controller: _firstNameCtrl,
@@ -1307,7 +1827,10 @@ class _ProfileTabState extends State<_ProfileTab> {
                         _infoError = null;
                         _infoSuccess = null;
                       }),
-                      style: DashboardText.body(size: 14, color: Colors.black87),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
                       decoration: dashboardInputDecoration(label: "First Name"),
                     ),
                     const SizedBox(height: 14),
@@ -1317,14 +1840,22 @@ class _ProfileTabState extends State<_ProfileTab> {
                         _infoError = null;
                         _infoSuccess = null;
                       }),
-                      style: DashboardText.body(size: 14, color: Colors.black87),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
                       decoration: dashboardInputDecoration(label: "Last Name"),
                     ),
                     const SizedBox(height: 14),
                     TextField(
                       enabled: false,
-                      controller: TextEditingController(text: p['email'] as String? ?? ''),
-                      style: DashboardText.body(size: 14, color: Colors.black87),
+                      controller: TextEditingController(
+                        text: p['email'] as String? ?? '',
+                      ),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
                       decoration: dashboardInputDecoration(label: "Email"),
                     ),
                     const SizedBox(height: 14),
@@ -1336,8 +1867,14 @@ class _ProfileTabState extends State<_ProfileTab> {
                         _infoError = null;
                         _infoSuccess = null;
                       }),
-                      style: DashboardText.body(size: 14, color: Colors.black87),
-                      decoration: dashboardInputDecoration(label: "Phone", hint: "0917 123 4567"),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                      decoration: dashboardInputDecoration(
+                        label: "Phone",
+                        hint: "0917 123 4567",
+                      ),
                     ),
                     const SizedBox(height: 14),
                     TextField(
@@ -1346,16 +1883,34 @@ class _ProfileTabState extends State<_ProfileTab> {
                         _infoError = null;
                         _infoSuccess = null;
                       }),
-                      style: DashboardText.body(size: 14, color: Colors.black87),
-                      decoration: dashboardInputDecoration(label: "Address", hint: "City, Province"),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                      decoration: dashboardInputDecoration(
+                        label: "Address",
+                        hint: "City, Province",
+                      ),
                     ),
                     if (_infoError != null) ...[
                       const SizedBox(height: 10),
-                      Text(_infoError!, style: DashboardText.body(size: 12, color: const Color(0xFFC62828))),
+                      Text(
+                        _infoError!,
+                        style: DashboardText.body(
+                          size: 12,
+                          color: const Color(0xFFC62828),
+                        ),
+                      ),
                     ],
                     if (_infoSuccess != null) ...[
                       const SizedBox(height: 10),
-                      Text(_infoSuccess!, style: DashboardText.body(size: 12, color: DashboardColors.statusCompleted)),
+                      Text(
+                        _infoSuccess!,
+                        style: DashboardText.body(
+                          size: 12,
+                          color: DashboardColors.statusCompleted,
+                        ),
+                      ),
                     ],
                     const SizedBox(height: 14),
                     SizedBox(
@@ -1366,11 +1921,27 @@ class _ProfileTabState extends State<_ProfileTab> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: DashboardColors.primary,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
                         child: _savingInfo
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : Text("Save Changes", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                "Save Changes",
+                                style: DashboardText.body(
+                                  size: 13,
+                                  weight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
                       ),
                     ),
                   ],
@@ -1380,26 +1951,46 @@ class _ProfileTabState extends State<_ProfileTab> {
 
               Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: DashboardColors.border)),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: DashboardColors.border),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("Change Password", style: DashboardText.heading(size: 15, color: Colors.black87)),
+                    Text(
+                      "Change Password",
+                      style: DashboardText.heading(
+                        size: 15,
+                        color: Colors.black87,
+                      ),
+                    ),
                     const SizedBox(height: 14),
                     TextField(
                       controller: _currentPassCtrl,
                       obscureText: true,
                       onChanged: (_) => setState(() => _passwordError = null),
-                      style: DashboardText.body(size: 14, color: Colors.black87),
-                      decoration: dashboardInputDecoration(label: "Current Password"),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                      decoration: dashboardInputDecoration(
+                        label: "Current Password",
+                      ),
                     ),
                     const SizedBox(height: 14),
                     TextField(
                       controller: _newPassCtrl,
                       obscureText: true,
                       onChanged: (_) => setState(() => _passwordError = null),
-                      style: DashboardText.body(size: 14, color: Colors.black87),
-                      decoration: dashboardInputDecoration(label: "New Password"),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                      decoration: dashboardInputDecoration(
+                        label: "New Password",
+                      ),
                     ),
                     const SizedBox(height: 14),
                     TextField(
@@ -1407,12 +1998,23 @@ class _ProfileTabState extends State<_ProfileTab> {
                       obscureText: true,
                       onChanged: (_) => setState(() => _passwordError = null),
                       onSubmitted: (_) => _changePassword(),
-                      style: DashboardText.body(size: 14, color: Colors.black87),
-                      decoration: dashboardInputDecoration(label: "Confirm New Password"),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                      decoration: dashboardInputDecoration(
+                        label: "Confirm New Password",
+                      ),
                     ),
                     if (_passwordError != null) ...[
                       const SizedBox(height: 10),
-                      Text(_passwordError!, style: DashboardText.body(size: 12, color: const Color(0xFFC62828))),
+                      Text(
+                        _passwordError!,
+                        style: DashboardText.body(
+                          size: 12,
+                          color: const Color(0xFFC62828),
+                        ),
+                      ),
                     ],
                     const SizedBox(height: 14),
                     SizedBox(
@@ -1423,11 +2025,27 @@ class _ProfileTabState extends State<_ProfileTab> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: DashboardColors.accent,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
                         child: _changingPassword
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : Text("Update Password", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                "Update Password",
+                                style: DashboardText.body(
+                                  size: 13,
+                                  weight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
                       ),
                     ),
                   ],
@@ -1440,9 +2058,22 @@ class _ProfileTabState extends State<_ProfileTab> {
                 height: 44,
                 child: OutlinedButton.icon(
                   onPressed: _logout,
-                  icon: const Icon(Icons.logout, size: 17, color: Color(0xFFC62828)),
-                  label: Text("Log Out", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: const Color(0xFFC62828))),
-                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFFC62828))),
+                  icon: const Icon(
+                    Icons.logout,
+                    size: 17,
+                    color: Color(0xFFC62828),
+                  ),
+                  label: Text(
+                    "Log Out",
+                    style: DashboardText.body(
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: const Color(0xFFC62828),
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFC62828)),
+                  ),
                 ),
               ),
             ],
