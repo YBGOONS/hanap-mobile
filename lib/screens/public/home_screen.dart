@@ -572,11 +572,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── FOOTER ─────────────────────────────────────────────────────────────
   Widget _buildFooter(BuildContext context) {
-    return Container(
+    return Padding(
       padding: const EdgeInsets.fromLTRB(20, 40, 20, 28),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: AppColors.hairline)),
-      ),
       child: _SiteContent(
         maxWidth: 960,
         child: Column(
