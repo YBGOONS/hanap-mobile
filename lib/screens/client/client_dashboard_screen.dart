@@ -664,11 +664,15 @@ class _MyJobsTabState extends State<_MyJobsTab> {
         .select(
           '*, worker:profiles!jobs_worker_id_fkey(first_name,last_name), ratings(rating,comment)',
         )
-        .eq('client_id', userId)
-        .order('created_at', ascending: false);
-    return (rows as List)
+        .eq('client_id', userId);
+    final jobs = (rows as List)
         .map((r) => Job.fromMap(r as Map<String, dynamic>))
         .toList();
+    // Freshest activity first — a job whose status just changed (paid,
+    // completed, cancelled...) floats to the top of "All" instead of
+    // staying buried under jobs merely *posted* more recently.
+    jobs.sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
+    return jobs;
   }
 
   Future<void> _refresh() async {

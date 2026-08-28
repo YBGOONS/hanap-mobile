@@ -952,11 +952,13 @@ class _MyJobsTabState extends State<_MyJobsTab> {
         .select(
           '*, client:profiles!jobs_client_id_fkey(first_name,last_name), ratings(rating,comment)',
         )
-        .eq('worker_id', userId)
-        .order('created_at', ascending: false);
-    return (rows as List)
+        .eq('worker_id', userId);
+    final jobs = (rows as List)
         .map((r) => Job.fromMap(r as Map<String, dynamic>))
         .toList();
+    // Same freshest-activity-first ordering as Client's My Jobs.
+    jobs.sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
+    return jobs;
   }
 
   Future<void> _refresh() async {

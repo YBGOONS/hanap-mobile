@@ -8,13 +8,19 @@ class Job {
   final double? budget;
   final String location;
   final DateTime? scheduledDate;
-  final String status; // open | accepted | arrived | in_progress | completed | cancelled
-  final String paymentStatus; // unpaid | paid | refund_requested | refunded | released
+  final String
+  status; // open | accepted | arrived | in_progress | completed | cancelled
+  final String
+  paymentStatus; // unpaid | paid | refund_requested | refunded | released
   final double? serviceFee; // HANAP's 10% cut, set once escrowed
-  final String? arrivalOtp; // shown to the client, entered by the worker on arrival
+  final String?
+  arrivalOtp; // shown to the client, entered by the worker on arrival
   final DateTime? arrivalVerifiedAt;
-  final List<String> completionPhotos; // storage paths in the completion-photos bucket
+  final List<String>
+  completionPhotos; // storage paths in the completion-photos bucket
   final DateTime? confirmedAt;
+  final DateTime? cancelledAt;
+  final DateTime? refundRequestedAt;
   final DateTime createdAt;
   final String? clientName;
   final String? workerName;
@@ -38,6 +44,8 @@ class Job {
     this.arrivalVerifiedAt,
     this.completionPhotos = const [],
     this.confirmedAt,
+    this.cancelledAt,
+    this.refundRequestedAt,
     required this.createdAt,
     this.clientName,
     this.workerName,
@@ -49,6 +57,24 @@ class Job {
   /// Labor fee + service fee — what the client actually pays at escrow time.
   double get totalCharged => (budget ?? 0) + (serviceFee ?? 0);
 
+  /// Most recent thing that happened to this job — whichever of its several
+  /// per-event timestamps is latest, falling back to when it was posted if
+  /// nothing else has happened yet. Used to sort "My Jobs" so a job whose
+  /// status just changed floats to the top instead of staying buried under
+  /// jobs that were merely *posted* more recently but haven't moved since.
+  DateTime get lastActivityAt {
+    var latest = createdAt;
+    for (final t in [
+      confirmedAt,
+      cancelledAt,
+      arrivalVerifiedAt,
+      refundRequestedAt,
+    ]) {
+      if (t != null && t.isAfter(latest)) latest = t;
+    }
+    return latest;
+  }
+
   factory Job.fromMap(Map<String, dynamic> map) {
     return Job(
       id: map['id'] as String,
@@ -58,14 +84,27 @@ class Job {
       description: map['description'] as String,
       budget: (map['budget'] as num?)?.toDouble(),
       location: map['location'] as String,
-      scheduledDate: map['scheduled_date'] != null ? DateTime.tryParse(map['scheduled_date'] as String) : null,
+      scheduledDate: map['scheduled_date'] != null
+          ? DateTime.tryParse(map['scheduled_date'] as String)
+          : null,
       status: map['status'] as String,
       paymentStatus: map['payment_status'] as String? ?? 'unpaid',
       serviceFee: (map['service_fee'] as num?)?.toDouble(),
       arrivalOtp: map['arrival_otp'] as String?,
-      arrivalVerifiedAt: map['arrival_verified_at'] != null ? DateTime.tryParse(map['arrival_verified_at'] as String) : null,
-      completionPhotos: (map['completion_photos'] as List?)?.cast<String>() ?? const [],
-      confirmedAt: map['confirmed_at'] != null ? DateTime.tryParse(map['confirmed_at'] as String) : null,
+      arrivalVerifiedAt: map['arrival_verified_at'] != null
+          ? DateTime.tryParse(map['arrival_verified_at'] as String)
+          : null,
+      completionPhotos:
+          (map['completion_photos'] as List?)?.cast<String>() ?? const [],
+      confirmedAt: map['confirmed_at'] != null
+          ? DateTime.tryParse(map['confirmed_at'] as String)
+          : null,
+      cancelledAt: map['cancelled_at'] != null
+          ? DateTime.tryParse(map['cancelled_at'] as String)
+          : null,
+      refundRequestedAt: map['refund_requested_at'] != null
+          ? DateTime.tryParse(map['refund_requested_at'] as String)
+          : null,
       createdAt: DateTime.parse(map['created_at'] as String),
       clientName: _fullName(map['client']),
       workerName: _fullName(map['worker']),
@@ -83,7 +122,9 @@ class Job {
   /// on a job that hasn't been rated yet.
   static Map<String, dynamic>? _rating(dynamic embedded) {
     if (embedded is Map) return embedded.cast<String, dynamic>();
-    if (embedded is List && embedded.isNotEmpty) return embedded.first as Map<String, dynamic>;
+    if (embedded is List && embedded.isNotEmpty) {
+      return embedded.first as Map<String, dynamic>;
+    }
     return null;
   }
 
@@ -91,7 +132,9 @@ class Job {
     if (profile is! Map) return null;
     final first = profile['first_name'] as String?;
     final last = profile['last_name'] as String?;
-    if ((first == null || first.isEmpty) && (last == null || last.isEmpty)) return null;
+    if ((first == null || first.isEmpty) && (last == null || last.isEmpty)) {
+      return null;
+    }
     return '${first ?? ''} ${last ?? ''}'.trim();
   }
 }
