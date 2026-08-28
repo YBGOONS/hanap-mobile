@@ -1,6 +1,8 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../../models/job.dart';
+import '../../models/weather_info.dart';
+import '../../services/weather_service.dart';
 import '../../theme/dashboard_theme.dart';
 import '../../utils/formatters.dart';
 
@@ -211,7 +213,110 @@ class DashboardComingSoonTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Text("$label — coming soon", style: DashboardText.body(size: 14, color: DashboardColors.muted)),
+      child: Text("$label (coming soon)", style: DashboardText.body(size: 14, color: DashboardColors.muted)),
+    );
+  }
+}
+
+/// Below this width, Client/Worker dashboards show a left [DashboardSidebar]
+/// instead of their bottom nav bar — same breakpoint/pattern as Admin's
+/// shell, so all three dashboards behave consistently on a wide browser
+/// window instead of only Admin adapting. Narrower than this (i.e. the real
+/// mobile app, always) keeps the existing bottom nav untouched.
+const double dashboardWideBreakpoint = 900.0;
+
+/// One entry in a [DashboardSidebar]. Tabs (Dashboard, My Jobs, Profile...)
+/// pass [selected] based on the screen's current tab; one-off actions that
+/// just push a new screen (Post a Job, Messages...) leave it false since
+/// they have no persistent "active" state.
+class SidebarDestination {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final Widget? trailing;
+  final VoidCallback onTap;
+  const SidebarDestination({
+    required this.icon,
+    required this.label,
+    this.selected = false,
+    this.trailing,
+    required this.onTap,
+  });
+}
+
+/// Left navigation rail shown by Client/Worker dashboards on wide (web)
+/// screens, mirroring Admin's `_Sidebar` look: HANAP wordmark, a greeting,
+/// and a flat list of destinations.
+class DashboardSidebar extends StatelessWidget {
+  final String greeting;
+  final List<SidebarDestination> destinations;
+  const DashboardSidebar({super.key, required this.greeting, required this.destinations});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 232,
+      decoration: const BoxDecoration(color: Colors.white, border: Border(right: BorderSide(color: DashboardColors.border))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
+            child: RichText(
+              text: TextSpan(
+                style: DashboardText.heading(size: 20, color: Colors.black87),
+                children: const [
+                  TextSpan(text: "HAN"),
+                  TextSpan(text: "AP", style: TextStyle(color: DashboardColors.accent)),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Text(greeting, style: DashboardText.body(size: 13, color: DashboardColors.muted)),
+          ),
+          const Divider(height: 1, color: DashboardColors.border),
+          const SizedBox(height: 8),
+          for (final d in destinations) _SidebarItem(destination: d),
+        ],
+      ),
+    );
+  }
+}
+
+class _SidebarItem extends StatelessWidget {
+  final SidebarDestination destination;
+  const _SidebarItem({required this.destination});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destination.selected ? DashboardColors.primary : DashboardColors.muted;
+    return Material(
+      color: destination.selected ? DashboardColors.primary.withValues(alpha: 0.08) : Colors.transparent,
+      child: InkWell(
+        onTap: destination.onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Row(
+            children: [
+              Icon(destination.icon, size: 20, color: color),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  destination.label,
+                  style: DashboardText.body(
+                    size: 14,
+                    weight: destination.selected ? FontWeight.w700 : FontWeight.w500,
+                    color: destination.selected ? DashboardColors.primary : Colors.black87,
+                  ),
+                ),
+              ),
+              if (destination.trailing != null) destination.trailing!,
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -528,7 +633,7 @@ String _paymentDetailLabel(String status) => switch (status) {
       'paid' => 'In Escrow',
       'refund_requested' => 'Refund Requested',
       'refunded' => 'Refunded',
-      'released' => 'Released',
+      'released' => 'Paid',
       _ => status,
     };
 
@@ -551,6 +656,76 @@ class _DetailRow extends StatelessWidget {
           Expanded(child: Text(value, style: DashboardText.body(size: 13, weight: FontWeight.w600, color: Colors.black87))),
         ],
       ),
+    );
+  }
+}
+
+/// Current weather at the job's location, fetched from Open-Meteo
+/// (see lib/services/weather_service.dart) — genuinely useful context for
+/// HANAP's mostly-outdoor categories (construction, cleaning, gardening,
+/// etc), and fails quietly (renders nothing) if the location can't be
+/// geocoded or the API call errors out, since it's a nice-to-have, not
+/// something that should ever block viewing a job's details.
+class _WeatherCard extends StatefulWidget {
+  final String location;
+  const _WeatherCard({required this.location});
+
+  @override
+  State<_WeatherCard> createState() => _WeatherCardState();
+}
+
+class _WeatherCardState extends State<_WeatherCard> {
+  late final Future<WeatherInfo?> _future = WeatherService().fetchForLocation(widget.location);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<WeatherInfo?>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(color: DashboardColors.bg, borderRadius: BorderRadius.circular(10)),
+            child: Row(
+              children: [
+                const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: DashboardColors.muted)),
+                const SizedBox(width: 10),
+                Text("Checking the weather…", style: DashboardText.body(size: 12.5, color: DashboardColors.muted)),
+              ],
+            ),
+          );
+        }
+
+        final weather = snapshot.data;
+        if (weather == null) return const SizedBox.shrink();
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(color: DashboardColors.bg, borderRadius: BorderRadius.circular(10)),
+          child: Row(
+            children: [
+              Text(weatherEmoji(weather.weatherCode, isDay: weather.isDay), style: const TextStyle(fontSize: 22)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "${weather.temperatureC.round()}°C · ${weatherLabel(weather.weatherCode)}",
+                      style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.black87),
+                    ),
+                    Text("Now in ${weather.placeName}", style: DashboardText.body(size: 11.5, color: DashboardColors.muted)),
+                  ],
+                ),
+              ),
+              if (weather.precipitationMm > 0)
+                Text("🌧️ ${weather.precipitationMm.toStringAsFixed(1)}mm", style: DashboardText.body(size: 11.5, color: DashboardColors.muted)),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -614,6 +789,10 @@ void showJobDetailsSheet(BuildContext context, Job job) {
                   _DetailRow(icon: Icons.account_balance_wallet_outlined, label: "Payment", value: _paymentDetailLabel(job.paymentStatus)),
                 if (job.serviceFee != null)
                   _DetailRow(icon: Icons.receipt_long_outlined, label: "Total Paid", value: "₱${job.totalCharged.toStringAsFixed(0)}"),
+                if (job.location.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _WeatherCard(location: job.location),
+                ],
                 if (job.rating != null) ...[
                   const SizedBox(height: 4),
                   Row(

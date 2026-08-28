@@ -159,7 +159,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await supabase.auth.resend(type: OtpType.signup, email: email);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Confirmation email sent again — check your inbox.")),
+        const SnackBar(content: Text("Confirmation email sent again. Check your inbox.")),
       );
     } catch (_) {
       if (!mounted) return;

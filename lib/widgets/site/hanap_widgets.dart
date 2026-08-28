@@ -14,6 +14,27 @@ extension EntranceAnimation on Widget {
   }
 }
 
+/// The "hanap" wordmark — plain white "han" + gold "ap" — used in the navbar,
+/// the footer, and both legal pages' top bar. Pulled out on its own so it
+/// stays pixel-identical everywhere it appears.
+class HanapWordmark extends StatelessWidget {
+  final double size;
+  const HanapWordmark({super.key, this.size = 20});
+
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      text: TextSpan(
+        style: AppText.heading(size: size),
+        children: const [
+          TextSpan(text: "han"),
+          TextSpan(text: "ap", style: TextStyle(color: AppColors.gold)),
+        ],
+      ),
+    );
+  }
+}
+
 /// Small glowing/pulsing dot — used in badges and "live" stat indicators.
 class PulsingDot extends StatefulWidget {
   final Color color;
@@ -391,15 +412,7 @@ class GlassNavBar extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                RichText(
-                  text: TextSpan(
-                    style: AppText.heading(size: 20),
-                    children: const [
-                      TextSpan(text: "han"),
-                      TextSpan(text: "ap", style: TextStyle(color: AppColors.gold)),
-                    ],
-                  ),
-                ),
+                const HanapWordmark(),
                 InkWell(
                   onTap: onMenuTap,
                   borderRadius: BorderRadius.circular(8),
@@ -418,6 +431,75 @@ class GlassNavBar extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class FaqEntry {
+  final String question;
+  final String answer;
+  const FaqEntry(this.question, this.answer);
+}
+
+/// One expandable FAQ row — "+" turns into "x" when opened, tapping either
+/// state toggles it. Only this row's own answer shows/hides; siblings are
+/// independent (no accordion-style "only one open at a time" behavior,
+/// since there's no reason a user couldn't want two answers open together).
+class FaqTile extends StatefulWidget {
+  final FaqEntry entry;
+  const FaqTile({super.key, required this.entry});
+
+  @override
+  State<FaqTile> createState() => _FaqTileState();
+}
+
+class _FaqTileState extends State<FaqTile> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _open ? AppColors.goldBorder : AppColors.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(widget.entry.question, style: AppText.body(size: 14.5, weight: FontWeight.w600, color: AppColors.textPrimary)),
+                  ),
+                  const SizedBox(width: 12),
+                  AnimatedRotation(
+                    turns: _open ? 0.125 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(Icons.add, color: AppColors.gold, size: 20),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox(width: double.infinity, height: 0),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(widget.entry.answer, style: AppText.body(size: 13.5, color: AppColors.textSecondary).copyWith(height: 1.55)),
+            ),
+            crossFadeState: _open ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 200),
+            sizeCurve: Curves.easeOut,
+          ),
+        ],
       ),
     );
   }

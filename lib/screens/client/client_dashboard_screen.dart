@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../main.dart';
 import '../../models/job.dart';
@@ -15,11 +16,14 @@ import '../shared/notifications_screen.dart';
 
 /// Client Dashboard — mobile adaptation of the React DashboardShell.
 ///
-/// The sidebar becomes a bottom nav; "Jobs" opens a bottom sheet with
+/// Below [dashboardWideBreakpoint] (the real mobile app, always) the
+/// sidebar becomes a bottom nav; "Jobs" opens a bottom sheet with
 /// Post a Job / My Jobs (My Jobs switches tab, Post a Job pushes a route
 /// and refreshes the Dashboard tab on success). "Inbox" opens a sheet with
 /// Messages (per-job chat, shared/conversations_screen.dart +
 /// shared/chat_screen.dart) and Notifications (shared/notifications_screen.dart).
+/// On a wide browser window, those same destinations show as a flat
+/// [DashboardSidebar] instead — same breakpoint Admin's shell uses.
 class ClientDashboardScreen extends StatefulWidget {
   final bool openMyJobs;
   const ClientDashboardScreen({super.key, this.openMyJobs = false});
@@ -36,11 +40,21 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
   bool _hasUnreadNotif = false;
   bool _hasUnreadMessages = false;
   bool get _hasUnread => _hasUnreadNotif || _hasUnreadMessages;
+  String? _firstName;
 
   @override
   void initState() {
     super.initState();
     _checkUnread();
+    _loadFirstName();
+  }
+
+  Future<void> _loadFirstName() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+    final row = await supabase.from('profiles').select('first_name').eq('id', userId).single();
+    if (!mounted) return;
+    setState(() => _firstName = row['first_name'] as String);
   }
 
   Future<void> _checkUnread() async {
@@ -109,56 +123,102 @@ class _ClientDashboardScreenState extends State<ClientDashboardScreen> {
     if (mounted) _checkUnread();
   }
 
+  Widget _content() => switch (_tab) {
+        _Tab.dashboard => _DashboardTab(key: ValueKey(_dashboardRefreshTick)),
+        _Tab.myJobs => const _MyJobsTab(),
+        _Tab.workers => const _WorkersTab(),
+        _Tab.profile => const _ProfileTab(),
+      };
+
+  List<SidebarDestination> _sidebarDestinations() => [
+        SidebarDestination(icon: Icons.home_outlined, label: "Dashboard", selected: _tab == _Tab.dashboard, onTap: () => setState(() => _tab = _Tab.dashboard)),
+        SidebarDestination(icon: Icons.add_circle_outline, label: "Post a Job", onTap: _postJob),
+        SidebarDestination(icon: Icons.work_outline, label: "My Jobs", selected: _tab == _Tab.myJobs, onTap: () => setState(() => _tab = _Tab.myJobs)),
+        SidebarDestination(icon: Icons.engineering_outlined, label: "Workers", selected: _tab == _Tab.workers, onTap: () => setState(() => _tab = _Tab.workers)),
+        SidebarDestination(
+          icon: Icons.chat_bubble_outline,
+          label: "Messages",
+          trailing: _hasUnreadMessages ? const _UnreadDot() : null,
+          onTap: () => _openInboxScreen(const ConversationsScreen()),
+        ),
+        SidebarDestination(
+          icon: Icons.notifications_outlined,
+          label: "Notifications",
+          trailing: _hasUnreadNotif ? const _UnreadDot() : null,
+          onTap: () => _openInboxScreen(const NotificationsScreen()),
+        ),
+        SidebarDestination(icon: Icons.person_outline, label: "Profile", selected: _tab == _Tab.profile, onTap: () => setState(() => _tab = _Tab.profile)),
+      ];
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: DashboardColors.bg,
-      body: SafeArea(
-        child: switch (_tab) {
-          _Tab.dashboard => _DashboardTab(key: ValueKey(_dashboardRefreshTick)),
-          _Tab.myJobs => const _MyJobsTab(),
-          _Tab.workers => const _WorkersTab(),
-          _Tab.profile => const _ProfileTab(),
-        },
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        selectedItemColor: DashboardColors.primary,
-        unselectedItemColor: DashboardColors.muted,
-        currentIndex: switch (_tab) {
-          _Tab.dashboard => 0,
-          _Tab.myJobs => 1,
-          _Tab.workers => 2,
-          _Tab.profile => 4,
-        },
-        onTap: (i) {
-          switch (i) {
-            case 0:
-              setState(() => _tab = _Tab.dashboard);
-            case 1:
-              _openJobsSheet();
-            case 2:
-              setState(() => _tab = _Tab.workers);
-            case 3:
-              _openInboxSheet();
-            case 4:
-              setState(() => _tab = _Tab.profile);
-          }
-        },
-        items: [
-          const BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: "Dashboard"),
-          const BottomNavigationBarItem(icon: Icon(Icons.work_outline), label: "Jobs"),
-          const BottomNavigationBarItem(icon: Icon(Icons.engineering_outlined), label: "Workers"),
-          BottomNavigationBarItem(icon: _InboxIcon(hasUnread: _hasUnread), label: "Inbox"),
-          const BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: "Profile"),
-        ],
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final content = SafeArea(child: _content());
+        if (constraints.maxWidth >= dashboardWideBreakpoint) {
+          return Scaffold(
+            backgroundColor: DashboardColors.bg,
+            body: Row(
+              children: [
+                DashboardSidebar(greeting: _firstName == null ? "Client Portal" : "Hi, $_firstName", destinations: _sidebarDestinations()),
+                Expanded(child: content),
+              ],
+            ),
+          );
+        }
+        return Scaffold(
+          backgroundColor: DashboardColors.bg,
+          body: content,
+          bottomNavigationBar: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.white,
+            selectedItemColor: DashboardColors.primary,
+            unselectedItemColor: DashboardColors.muted,
+            currentIndex: switch (_tab) {
+              _Tab.dashboard => 0,
+              _Tab.myJobs => 1,
+              _Tab.workers => 2,
+              _Tab.profile => 4,
+            },
+            onTap: (i) {
+              switch (i) {
+                case 0:
+                  setState(() => _tab = _Tab.dashboard);
+                case 1:
+                  _openJobsSheet();
+                case 2:
+                  setState(() => _tab = _Tab.workers);
+                case 3:
+                  _openInboxSheet();
+                case 4:
+                  setState(() => _tab = _Tab.profile);
+              }
+            },
+            items: [
+              const BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: "Dashboard"),
+              const BottomNavigationBarItem(icon: Icon(Icons.work_outline), label: "Jobs"),
+              const BottomNavigationBarItem(icon: Icon(Icons.engineering_outlined), label: "Workers"),
+              BottomNavigationBarItem(icon: _InboxIcon(hasUnread: _hasUnread), label: "Inbox"),
+              const BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: "Profile"),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
-/// Small unread-badge dot on the Inbox tab icon — sample `true` for now.
+/// Small standalone unread-badge dot, used as a [SidebarDestination.trailing].
+class _UnreadDot extends StatelessWidget {
+  const _UnreadDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(width: 8, height: 8, decoration: const BoxDecoration(color: DashboardColors.accent, shape: BoxShape.circle));
+  }
+}
+
+/// Small unread-badge dot on the Inbox tab icon.
 class _InboxIcon extends StatelessWidget {
   final bool hasUnread;
   const _InboxIcon({required this.hasUnread});
@@ -313,7 +373,10 @@ class _DashboardTabState extends State<_DashboardTab> {
                     for (var i = 0; i < stats.length; i++) ...[
                       if (i != 0) const SizedBox(width: 10),
                       Expanded(
-                        child: DashboardStatCard(value: stats[i].value, label: stats[i].label, accentColor: stats[i].color),
+                        child: DashboardStatCard(value: stats[i].value, label: stats[i].label, accentColor: stats[i].color)
+                            .animate(delay: (i * 80).ms)
+                            .fadeIn(duration: 280.ms)
+                            .slideY(begin: 0.15, end: 0, duration: 280.ms, curve: Curves.easeOut),
                       ),
                     ],
                   ],
@@ -331,8 +394,11 @@ class _DashboardTabState extends State<_DashboardTab> {
                 if (data.recentJobs.isEmpty)
                   Text("You haven't posted any jobs yet.", style: DashboardText.body(size: 13, color: DashboardColors.muted))
                 else
-                  for (final job in data.recentJobs)
-                    RecentJobListItem(title: job.category, location: job.location, status: job.status),
+                  for (var i = 0; i < data.recentJobs.length; i++)
+                    RecentJobListItem(title: data.recentJobs[i].category, location: data.recentJobs[i].location, status: data.recentJobs[i].status)
+                        .animate(delay: (150 + i * 60).ms)
+                        .fadeIn(duration: 260.ms)
+                        .slideX(begin: 0.05, end: 0, duration: 260.ms, curve: Curves.easeOut),
               ],
             ),
           );
@@ -541,7 +607,7 @@ class _MyJobsTabState extends State<_MyJobsTab> {
                             onDelete: job.status == 'open' ? () => _delete(job) : null,
                             onChanged: _refresh,
                             onTap: () => showJobDetailsSheet(context, job),
-                          );
+                          ).animate(delay: (i.clamp(0, 6) * 60).ms).fadeIn(duration: 260.ms).slideY(begin: 0.06, end: 0, duration: 260.ms, curve: Curves.easeOut);
                         },
                       ),
               ),
@@ -577,7 +643,7 @@ class _JobHistoryCard extends StatelessWidget {
         'paid' => 'In Escrow',
         'refund_requested' => 'Refund Requested',
         'refunded' => 'Refunded',
-        'released' => 'Released',
+        'released' => 'Paid',
         _ => status,
       };
 

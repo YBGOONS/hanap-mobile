@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../main.dart';
@@ -71,7 +72,7 @@ class ActiveJobCard extends StatelessWidget {
           JobPaymentActions(job: job, onChanged: onChanged),
         ],
       ),
-    );
+    ).animate().fadeIn(duration: 320.ms).slideY(begin: 0.06, end: 0, duration: 320.ms, curve: Curves.easeOut);
   }
 }
 
@@ -193,7 +194,7 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
     try {
       await supabase.rpc('confirm_completion', params: {'job_id': widget.job.id});
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Payment released to your worker!")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Payment sent to your worker!")));
       widget.onChanged();
     } on PostgrestException catch (e) {
       if (!mounted) return;
@@ -347,7 +348,7 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
           const Divider(height: 18),
           _ReceiptLine(label: "Total Paid", value: labor + fee, bold: true),
           const SizedBox(height: 6),
-          Text("Worker received ₱${labor.toStringAsFixed(0)} — payment released.", style: DashboardText.body(size: 11, color: DashboardColors.statusCompleted)),
+          Text("Worker received ₱${labor.toStringAsFixed(0)}. Payment sent.", style: DashboardText.body(size: 11, color: DashboardColors.statusCompleted)),
         ],
       ),
     );
@@ -365,7 +366,7 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
       );
     }
     if (job.paymentStatus == 'refund_requested') {
-      return const _StatusNote(icon: Icons.hourglass_top, text: "Refund requested — waiting for admin review.", color: DashboardColors.accent);
+      return const _StatusNote(icon: Icons.hourglass_top, text: "Refund requested, waiting for admin review.", color: DashboardColors.accent);
     }
     // Payment happens right after acceptance — before the worker can even
     // mark themselves 'arrived' (see verify_arrival_otp in schema.sql).
@@ -396,7 +397,7 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
           _receipt(),
           const SizedBox(height: 10),
           job.rating != null
-              ? const _StatusNote(icon: Icons.star, text: "You rated this job — booking complete.", color: DashboardColors.accent)
+              ? const _StatusNote(icon: Icons.star, text: "You rated this job. Booking complete.", color: DashboardColors.accent)
               : _rateWorkerButton(),
         ],
       );

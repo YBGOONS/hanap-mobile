@@ -349,7 +349,7 @@ begin
   end if;
 
   insert into public.notifications (user_id, title, body, job_id)
-  values (j.client_id, 'Job complete — please confirm', 'Your worker finished "' || j.category || '". Confirm to release payment.', j.id);
+  values (j.client_id, 'Job complete, please confirm', 'Your worker finished "' || j.category || '". Confirm to release payment.', j.id);
 end;
 $$;
 
@@ -374,7 +374,7 @@ begin
   end if;
 
   insert into public.notifications (user_id, title, body, job_id)
-  values (j.worker_id, 'Payment released', 'The client confirmed "' || j.category || '" — your ₱' || coalesce(j.budget, 0)::text || ' has been released.', j.id);
+  values (j.worker_id, 'Payment sent', 'The client confirmed "' || j.category || '". Your ₱' || coalesce(j.budget, 0)::text || ' has been sent.', j.id);
 end;
 $$;
 
@@ -683,7 +683,7 @@ begin
     insert into public.notifications (user_id, title, body, job_id)
     values (j.client_id, 'Refund denied', 'Your refund request for "' || j.category || '" was denied: ' || message, j.id);
     insert into public.notifications (user_id, title, body, job_id)
-    values (j.worker_id, 'Payment released', 'The client''s refund request for "' || j.category || '" was denied — your ₱' || coalesce(j.budget, 0)::text || ' has been released.', j.id);
+    values (j.worker_id, 'Payment sent', 'The client''s refund request for "' || j.category || '" was denied. Your ₱' || coalesce(j.budget, 0)::text || ' has been sent.', j.id);
   end if;
 end;
 $$;
@@ -771,13 +771,13 @@ begin
   for j in
     update public.jobs
     set status = 'cancelled',
-        cancel_reason = 'Automatically cancelled — no worker accepted it before the scheduled date.',
+        cancel_reason = 'Automatically cancelled. No worker accepted it before the scheduled date.',
         cancelled_at = now()
     where status = 'open' and scheduled_date is not null and scheduled_date < current_date
     returning *
   loop
     insert into public.notifications (user_id, title, body, job_id)
-    values (j.client_id, 'Job auto-cancelled', 'Your "' || j.category || '" job was cancelled — no worker accepted it before the scheduled date.', j.id);
+    values (j.client_id, 'Job auto-cancelled', 'Your "' || j.category || '" job was cancelled. No worker accepted it before the scheduled date.', j.id);
   end loop;
 end;
 $$;
@@ -919,3 +919,24 @@ create policy "completion_photos_upload_own_folder"
     bucket_id = 'completion-photos'
     and (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- ── PUBLIC STATS (Home page) ─────────────────────────────────────────────
+-- The marketing Home page is shown to signed-out visitors, but profiles/jobs
+-- select policies are `to authenticated` only — an anon caller can't read
+-- those tables directly. Rather than opening up row-level access, this
+-- returns only the four aggregate numbers Home actually displays; security
+-- definer bypasses RLS to compute them, and (per the note above on
+-- auto_expire_open_jobs/send_job_reminders) Postgres grants EXECUTE on new
+-- functions to PUBLIC by default, so no explicit grant is needed for the
+-- anon key to call this from a logged-out browser.
+create or replace function public.public_stats()
+returns table (jobs_posted bigint, verified_workers bigint, satisfaction_pct numeric, cities_covered bigint)
+language sql
+security definer set search_path = public
+as $$
+  select
+    (select count(*) from public.jobs),
+    (select count(*) from public.profiles where role = 'worker' and status = 'active'),
+    (select coalesce(round(avg(rating) / 5.0 * 100), 0) from public.ratings),
+    (select count(distinct split_part(location, ',', 1)) from public.profiles where role = 'worker' and status = 'active' and location is not null and location <> '');
+$$;

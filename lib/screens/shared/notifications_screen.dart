@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../main.dart';
 import '../../models/app_notification.dart';
@@ -42,8 +41,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _openNotification(List<AppNotification> items, int index) async {
     final item = items[index];
     if (item.readAt == null) {
-      setState(() => items[index] = item.copyWith(readAt: DateTime.now()));
-      unawaited(supabase.from('notifications').update({'read_at': DateTime.now().toIso8601String()}).eq('id', item.id));
+      try {
+        final updatedRows = await supabase
+            .from('notifications')
+            .update({'read_at': DateTime.now().toIso8601String()})
+            .eq('id', item.id)
+            .select();
+        // Only reflect it as read locally once the write is actually
+        // confirmed — an RLS-filtered zero-row update returns success with
+        // an empty list instead of throwing, so checking for a returned
+        // row is the only way to catch that silently.
+        if (updatedRows.isNotEmpty && mounted) {
+          setState(() => items[index] = item.copyWith(readAt: DateTime.now()));
+        }
+      } catch (_) {
+        // Not fatal — still let them open the job even if marking as read failed.
+      }
     }
 
     if (item.jobId == null) return;

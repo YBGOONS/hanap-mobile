@@ -1,20 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../main.dart';
 import '../../models/categories.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/site/hanap_button.dart';
 import '../../widgets/site/hanap_dialog.dart';
 import '../../widgets/site/hanap_widgets.dart';
+import '../../widgets/site/particle_background.dart';
 import 'login_screen.dart';
+import 'privacy_policy_screen.dart';
 import 'register_screen.dart';
+import 'terms_of_service_screen.dart';
 
-/// Adapted from src/views/pages/Home.js.
-/// The web version has a Three.js particle-field hero — not practical
-/// (or needed) on mobile, so this uses a native gradient hero instead,
-/// keeping the same brand feel: dark bg (#050505) + gold accent, minimal palette.
-///
-/// TODO(supabase): connect StatsGrid to Supabase (counts from the
-/// "jobs" and "profiles" tables) — similar to fetchStats() in the old Home.js.
+/// Adapted from src/views/pages/Home.js. The web version's Three.js
+/// particle-field hero is approximated here with a lightweight
+/// CustomPainter starfield (see widgets/site/particle_background.dart),
+/// spanning the whole page instead of just the hero — cheap enough to run
+/// behind a scrolling page on mobile. Same brand feel otherwise: dark bg
+/// (#050505) + gold accent, minimal palette.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -31,6 +35,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final _howItWorksKey = GlobalKey();
   final _statsKey = GlobalKey();
   final _contactKey = GlobalKey();
+  final _faqKey = GlobalKey();
+
+  late final Future<List<StatEntry>> _statsFuture = _loadStats();
 
   @override
   void initState() {
@@ -39,6 +46,31 @@ class _HomeScreenState extends State<HomeScreen> {
       final scrolled = _scrollCtrl.offset > 12;
       if (scrolled != _scrolled) setState(() => _scrolled = scrolled);
     });
+  }
+
+  /// Real counts from `public.public_stats()` (see supabase/schema.sql) —
+  /// a security-definer RPC, since a signed-out visitor can't select from
+  /// jobs/profiles directly under RLS. Falls back to the old placeholder
+  /// numbers if the call fails (e.g. offline), so the section never renders
+  /// blank/broken for a visitor who just hasn't got a connection.
+  Future<List<StatEntry>> _loadStats() async {
+    try {
+      final rows = await supabase.rpc('public_stats') as List;
+      final row = rows.first as Map<String, dynamic>;
+      return [
+        StatEntry("${row['jobs_posted']}", "Jobs Posted", live: true),
+        StatEntry("${row['verified_workers']}", "Verified Workers"),
+        StatEntry("${(row['satisfaction_pct'] as num).toInt()}%", "Satisfaction"),
+        StatEntry("${row['cities_covered']}", "Cities Covered"),
+      ];
+    } catch (_) {
+      return const [
+        StatEntry("0", "Jobs Posted", live: true),
+        StatEntry("0", "Verified Workers"),
+        StatEntry("0%", "Satisfaction"),
+        StatEntry("0", "Cities Covered"),
+      ];
+    }
   }
 
   @override
@@ -54,14 +86,47 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Closes the mobile menu, then scrolls to [key] once the overlay's gone
   /// and the underlying CustomScrollView has its normal layout back.
+  /// `alignment: 0.5` centers the target section in the viewport instead of
+  /// just nudging it to the nearest edge, which on a short section (like
+  /// FAQ or a single "Process" step) could otherwise land it half-visible
+  /// right at the top or bottom edge of the screen.
   void _closeMenuAndScrollTo(GlobalKey key) {
     setState(() => _menuOpen = false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = key.currentContext;
       if (ctx != null) {
-        Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+        Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut, alignment: 0.5);
       }
     });
+  }
+
+  /// Same idea, for the footer's links — no mobile menu overlay to close
+  /// first since the footer is always part of the normal page flow.
+  void _scrollTo(GlobalKey key) {
+    final ctx = key.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut, alignment: 0.5);
+    }
+  }
+
+  void _scrollToTop() {
+    _scrollCtrl.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+  }
+
+  Future<void> _openGithub() async {
+    await launchUrl(Uri.parse('https://github.com/YBGOONS/hanap-mobile'), mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _openEmail() async {
+    await launchUrl(Uri(scheme: 'mailto', path: 'HANAP@gmail.com'));
+  }
+
+  void _openPrivacyPolicy() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()));
+  }
+
+  void _openTerms() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TermsOfServiceScreen()));
   }
 
   @override
@@ -70,6 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: AppColors.bg,
       body: Stack(
         children: [
+          const Positioned.fill(child: ParticleBackground()),
           CustomScrollView(
             controller: _scrollCtrl,
             slivers: [
@@ -78,7 +144,9 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverToBoxAdapter(child: _buildCategories()),
               SliverToBoxAdapter(child: KeyedSubtree(key: _featuresKey, child: _buildFeatures())),
               SliverToBoxAdapter(child: KeyedSubtree(key: _howItWorksKey, child: _buildHowItWorks())),
+              SliverToBoxAdapter(child: KeyedSubtree(key: _faqKey, child: _buildFaq())),
               SliverToBoxAdapter(child: KeyedSubtree(key: _contactKey, child: _buildFooterCta(context))),
+              SliverToBoxAdapter(child: _buildFooter(context)),
             ],
           ),
           if (_menuOpen)
@@ -145,7 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ).fadeSlideIn(delay: 80.ms),
           const SizedBox(height: 20),
           Text(
-            "HANAP connects you with verified local skilled workers — carpenters, electricians, plumbers, and more — with secure escrow payments and real-time job tracking.",
+            "HANAP connects you with verified local skilled workers (carpenters, electricians, plumbers, and more) with secure escrow payments and real-time job tracking.",
             style: AppText.body(size: 15, color: AppColors.textSecondary).copyWith(height: 1.6),
           ).fadeSlideIn(delay: 140.ms),
           const SizedBox(height: 28),
@@ -161,14 +229,19 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       color: AppColors.surf,
       padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
-      child: const StatsGrid(
-        stats: [
-          StatEntry("312+", "Jobs Posted", live: true),
-          StatEntry("94+", "Verified Workers"),
-          StatEntry("98%", "Satisfaction"),
-          StatEntry("11+", "Cities Covered"),
-        ],
-      ).fadeSlideIn(),
+      child: FutureBuilder<List<StatEntry>>(
+        future: _statsFuture,
+        builder: (context, snapshot) {
+          final stats = snapshot.data ??
+              const [
+                StatEntry("—", "Jobs Posted", live: true),
+                StatEntry("—", "Verified Workers"),
+                StatEntry("—", "Satisfaction"),
+                StatEntry("—", "Cities Covered"),
+              ];
+          return StatsGrid(stats: stats).fadeSlideIn();
+        },
+      ),
     );
   }
 
@@ -210,7 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildFeatures() {
     final features = [
       ("🛡️", "Verified Workers", "Every worker goes through an NBI clearance check before approval."),
-      ("⚡", "Real-Time Tracking", "From Accepted to Completed — you always know the job status."),
+      ("⚡", "Real-Time Tracking", "From Accepted to Completed, you always know the job status."),
       ("📍", "Near You", "Find workers near your location, fast and convenient."),
     ];
     return Padding(
@@ -261,6 +334,33 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ── FAQ ────────────────────────────────────────────────────────────────
+  Widget _buildFaq() {
+    const faqs = [
+      FaqEntry("Is HANAP free to use?", "Yes, creating an account and posting jobs is completely free. HANAP only charges a small 10% service fee on completed, paid jobs."),
+      FaqEntry(
+          "How does payment work?", "Payments go through PayMongo and are held in HANAP's escrow until you confirm the job is done. The worker only gets paid once you're satisfied."),
+      FaqEntry("How are workers verified?", "Every worker submits a valid NBI Clearance, which our admin team reviews and approves before they can accept jobs."),
+      FaqEntry("What if I'm not satisfied with the work?", "You can request a refund with photo evidence directly from the job details. Our admin team reviews every request."),
+      FaqEntry("Can I cancel a job after posting it?", "Yes, you can edit or delete a job posting anytime before a worker accepts it."),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 48, 20, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionHeading(
+            label: "Support",
+            headingFirstLine: "Frequently asked",
+            headingGoldWord: "questions",
+          ).fadeSlideIn(),
+          const SizedBox(height: 24),
+          for (var i = 0; i < faqs.length; i++) FaqTile(entry: faqs[i]).fadeSlideIn(delay: (i * 60).ms),
+        ],
+      ),
+    );
+  }
+
   // ── FOOTER CTA ─────────────────────────────────────────────────────────
   Widget _buildFooterCta(BuildContext context) {
     return Container(
@@ -299,6 +399,98 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     ).fadeSlideIn();
+  }
+
+  // ── FOOTER ─────────────────────────────────────────────────────────────
+  Widget _buildFooter(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 40, 20, 28),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.hairline))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const HanapWordmark(size: 22),
+          const SizedBox(height: 10),
+          Text("A simplified way to find and hire verified skilled workers.", style: AppText.body(size: 13, color: AppColors.textSecondary)),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              InkWell(
+                onTap: _openEmail,
+                child: Text("HANAP@gmail.com", style: AppText.body(size: 13, color: AppColors.textSecondary)),
+              ),
+              const SizedBox(width: 14),
+              InkWell(
+                onTap: _openGithub,
+                borderRadius: BorderRadius.circular(6),
+                child: Icon(Icons.code, size: 20, color: AppColors.textSecondary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 36),
+          Wrap(
+            spacing: 40,
+            runSpacing: 28,
+            children: [
+              _FooterColumn(
+                title: "Product",
+                links: [
+                  (label: "About", onTap: _scrollToTop),
+                  (label: "Demo", onTap: () => _scrollTo(_howItWorksKey)),
+                ],
+              ),
+              _FooterColumn(
+                title: "Support",
+                links: [
+                  (label: "FAQ", onTap: () => _scrollTo(_faqKey)),
+                ],
+              ),
+              _FooterColumn(
+                title: "Legal",
+                links: [
+                  (label: "Privacy Policy", onTap: _openPrivacyPolicy),
+                  (label: "Terms of Service", onTap: _openTerms),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 36),
+          Container(height: 1, color: AppColors.hairline),
+          const SizedBox(height: 20),
+          Text("© 2026 HANAP. All rights reserved.", style: AppText.body(size: 11.5, color: AppColors.textTertiary)),
+          const SizedBox(height: 4),
+          Text("A solo project made by Giovanni Lopez", style: AppText.body(size: 11.5, color: AppColors.textTertiary)),
+        ],
+      ),
+    ).fadeSlideIn();
+  }
+}
+
+class _FooterColumn extends StatelessWidget {
+  final String title;
+  final List<({String label, VoidCallback onTap})> links;
+  const _FooterColumn({required this.title, required this.links});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 140,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: AppText.body(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          const SizedBox(height: 14),
+          for (final link in links)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: InkWell(
+                onTap: link.onTap,
+                child: Text(link.label, style: AppText.body(size: 13, color: AppColors.textSecondary)),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

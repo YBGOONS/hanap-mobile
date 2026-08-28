@@ -149,7 +149,7 @@ class _ConversationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final initials = otherName.isNotEmpty ? otherName[0].toUpperCase() : "?";
-    final preview = entry.lastMessage?.body ?? "No messages yet — say hello.";
+    final preview = entry.lastMessage?.body ?? "No messages yet. Say hello.";
     return ListTile(
       onTap: onTap,
       leading: CircleAvatar(

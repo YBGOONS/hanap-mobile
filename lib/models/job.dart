@@ -75,13 +75,16 @@ class Job {
     );
   }
 
-  /// `ratings` comes back from Supabase as an embedded list (0 or 1 rows,
-  /// enforced by the unique constraint on ratings.job_id) when the query
-  /// selects `ratings(rating,comment)`. Absent entirely on queries that
-  /// don't embed it.
+  /// `ratings` comes back from Supabase as a *single embedded object* (not
+  /// a list) when the query selects `ratings(rating,comment)` — the unique
+  /// constraint on ratings.job_id makes PostgREST treat this as a to-one
+  /// relationship. Handles the list shape too, defensively, in case that
+  /// ever changes. Absent/null entirely on queries that don't embed it, or
+  /// on a job that hasn't been rated yet.
   static Map<String, dynamic>? _rating(dynamic embedded) {
-    if (embedded is! List || embedded.isEmpty) return null;
-    return embedded.first as Map<String, dynamic>;
+    if (embedded is Map) return embedded.cast<String, dynamic>();
+    if (embedded is List && embedded.isNotEmpty) return embedded.first as Map<String, dynamic>;
+    return null;
   }
 
   static String? _fullName(dynamic profile) {

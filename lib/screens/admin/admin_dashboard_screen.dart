@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,7 +12,7 @@ import '../public/home_screen.dart';
 enum _AdminTab { dashboard, users, jobs, transactions, refunds, reports, settings }
 
 /// Below this width the sidebar becomes a Drawer (hamburger menu) instead
-/// of a permanent column — mirrors the React DashboardShell's mobile-topbar
+/// of a permanent column, mirroring the React DashboardShell's mobile-topbar
 /// breakpoint. Admin is still primarily a desktop web portal (the Users
 /// table needs real width), but the shell shouldn't break on a narrow
 /// browser window or a phone.
@@ -529,7 +530,7 @@ class _ProfileStatusBadge extends StatelessWidget {
     case 'refunded':
       return (label: 'Refunded', color: DashboardColors.statusCancelled);
     case 'released':
-      return (label: 'Released', color: DashboardColors.statusCompleted);
+      return (label: 'Paid', color: DashboardColors.statusCompleted);
     default:
       return (label: status, color: DashboardColors.muted);
   }
@@ -960,21 +961,51 @@ class _OverviewTabState extends State<_OverviewTab> {
                 const SizedBox(height: 20),
                 Row(
                   children: [
-                    Expanded(child: DashboardStatCard(icon: Icons.person_outline, value: "${d.clients}", label: "Total Clients", accentColor: DashboardColors.primary)),
+                    Expanded(
+                      child: DashboardStatCard(icon: Icons.person_outline, value: "${d.clients}", label: "Total Clients", accentColor: DashboardColors.primary)
+                          .animate(delay: 0.ms)
+                          .fadeIn(duration: 280.ms)
+                          .slideY(begin: 0.15, end: 0, duration: 280.ms, curve: Curves.easeOut),
+                    ),
                     const SizedBox(width: 14),
-                    Expanded(child: DashboardStatCard(icon: Icons.build_outlined, value: "${d.activeWorkers}", label: "Active Workers", accentColor: DashboardColors.accent)),
+                    Expanded(
+                      child: DashboardStatCard(icon: Icons.build_outlined, value: "${d.activeWorkers}", label: "Active Workers", accentColor: DashboardColors.accent)
+                          .animate(delay: 80.ms)
+                          .fadeIn(duration: 280.ms)
+                          .slideY(begin: 0.15, end: 0, duration: 280.ms, curve: Curves.easeOut),
+                    ),
                     const SizedBox(width: 14),
-                    Expanded(child: DashboardStatCard(icon: Icons.work_outline, value: "${d.totalJobs}", label: "Total Jobs", accentColor: DashboardColors.statusCompleted)),
+                    Expanded(
+                      child: DashboardStatCard(icon: Icons.work_outline, value: "${d.totalJobs}", label: "Total Jobs", accentColor: DashboardColors.statusCompleted)
+                          .animate(delay: 160.ms)
+                          .fadeIn(duration: 280.ms)
+                          .slideY(begin: 0.15, end: 0, duration: 280.ms, curve: Curves.easeOut),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 14),
                 Row(
                   children: [
-                    Expanded(child: _PlainStatCard(value: "${d.activeJobs}", label: "Active Jobs", color: DashboardColors.statOpen)),
+                    Expanded(
+                      child: _PlainStatCard(value: "${d.activeJobs}", label: "Active Jobs", color: DashboardColors.statOpen)
+                          .animate(delay: 240.ms)
+                          .fadeIn(duration: 280.ms)
+                          .slideY(begin: 0.15, end: 0, duration: 280.ms, curve: Curves.easeOut),
+                    ),
                     const SizedBox(width: 14),
-                    Expanded(child: _PlainStatCard(value: "${d.completedJobs}", label: "Completed Jobs", color: DashboardColors.statusCompleted)),
+                    Expanded(
+                      child: _PlainStatCard(value: "${d.completedJobs}", label: "Completed Jobs", color: DashboardColors.statusCompleted)
+                          .animate(delay: 320.ms)
+                          .fadeIn(duration: 280.ms)
+                          .slideY(begin: 0.15, end: 0, duration: 280.ms, curve: Curves.easeOut),
+                    ),
                     const SizedBox(width: 14),
-                    Expanded(child: _PlainStatCard(value: "₱${d.totalEarnings.toStringAsFixed(0)}", label: "Total Earnings (10% fee)", color: DashboardColors.accent)),
+                    Expanded(
+                      child: _PlainStatCard(value: "₱${d.totalEarnings.toStringAsFixed(0)}", label: "Total Earnings (10% fee)", color: DashboardColors.accent)
+                          .animate(delay: 400.ms)
+                          .fadeIn(duration: 280.ms)
+                          .slideY(begin: 0.15, end: 0, duration: 280.ms, curve: Curves.easeOut),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -1770,8 +1801,31 @@ class _ReportsData {
   final int totalJobs;
   final int completedJobs;
   final double totalRevenue;
+  final List<_TopWorker> topWorkers;
 
-  const _ReportsData({required this.categoryCounts, required this.totalJobs, required this.completedJobs, required this.totalRevenue});
+  const _ReportsData({
+    required this.categoryCounts,
+    required this.totalJobs,
+    required this.completedJobs,
+    required this.totalRevenue,
+    required this.topWorkers,
+  });
+}
+
+/// One row of the "Top Performing Workers" leaderboard — a worker's average
+/// rating across all their `ratings` rows, plus how many reviews it's based on.
+class _TopWorker {
+  final String name;
+  int _sum = 0;
+  int count = 0;
+  _TopWorker(this.name);
+
+  void addRating(int rating) {
+    _sum += rating;
+    count++;
+  }
+
+  double get average => count == 0 ? 0 : _sum / count;
 }
 
 class _ReportsTab extends StatefulWidget {
@@ -1793,6 +1847,8 @@ class _ReportsTabState extends State<_ReportsTab> {
   Future<_ReportsData> _load() async {
     final jobRows = ((await supabase.from('jobs').select('category, status')) as List).cast<Map<String, dynamic>>();
     final txRows = ((await supabase.from('transactions').select('type, platform_fee, job:jobs(payment_status)')) as List).cast<Map<String, dynamic>>();
+    final ratingRows = ((await supabase.from('ratings').select('worker_id, rating, worker:profiles!ratings_worker_id_fkey(first_name,last_name)')) as List)
+        .cast<Map<String, dynamic>>();
     // HANAP's actual earnings — the 10% platform fee, only once it's been
     // released to the worker. 'paid' (still in escrow) and
     // 'refund_requested' (dispute outcome undetermined) can still end up
@@ -1807,11 +1863,21 @@ class _ReportsTabState extends State<_ReportsTab> {
       categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
     }
 
+    final byWorker = <String, _TopWorker>{};
+    for (final r in ratingRows) {
+      final workerId = r['worker_id'] as String;
+      final worker = r['worker'] as Map<String, dynamic>?;
+      final name = worker == null ? "Unknown worker" : "${worker['first_name']} ${worker['last_name']}";
+      byWorker.putIfAbsent(workerId, () => _TopWorker(name)).addRating(r['rating'] as int);
+    }
+    final topWorkers = byWorker.values.toList()..sort((a, b) => b.average.compareTo(a.average));
+
     return _ReportsData(
       categoryCounts: categoryCounts,
       totalJobs: jobRows.length,
       completedJobs: jobRows.where((j) => j['status'] == 'completed').length,
       totalRevenue: revenue,
+      topWorkers: topWorkers.take(5).toList(),
     );
   }
 
@@ -1880,6 +1946,20 @@ class _ReportsTabState extends State<_ReportsTab> {
                               children: [for (final entry in sortedCategories) _CategoryBar(label: entry.key, count: entry.value, maxCount: maxCount)],
                             ),
                           ),
+                        const SizedBox(height: 28),
+                        Text("Top Performing Workers", style: DashboardText.heading(size: 16, color: Colors.black87)),
+                        const SizedBox(height: 14),
+                        if (d.topWorkers.isEmpty)
+                          Text("No ratings yet.", style: DashboardText.body(size: 13, color: DashboardColors.muted))
+                        else
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 560),
+                            child: Column(
+                              children: [
+                                for (var i = 0; i < d.topWorkers.length; i++) _TopWorkerRow(rank: i + 1, worker: d.topWorkers[i]),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   );
@@ -1920,6 +2000,38 @@ class _CategoryBar extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           SizedBox(width: 24, child: Text("$count", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.black87))),
+        ],
+      ),
+    );
+  }
+}
+
+class _TopWorkerRow extends StatelessWidget {
+  final int rank;
+  final _TopWorker worker;
+  const _TopWorkerRow({required this.rank, required this.worker});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 24,
+            child: Text("$rank", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: DashboardColors.muted)),
+          ),
+          Expanded(
+            child: Text(worker.name, style: DashboardText.body(size: 13, weight: FontWeight.w600, color: Colors.black87)),
+          ),
+          const Icon(Icons.star, size: 15, color: DashboardColors.accent),
+          const SizedBox(width: 4),
+          Text(worker.average.toStringAsFixed(1), style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.black87)),
+          const SizedBox(width: 6),
+          Text(
+            "(${worker.count} review${worker.count == 1 ? '' : 's'})",
+            style: DashboardText.body(size: 12, color: DashboardColors.muted),
+          ),
         ],
       ),
     );
