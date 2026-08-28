@@ -321,7 +321,7 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
             ),
             child: _loading
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Text("Confirm & Release Payment", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
+                : Text("Confirm", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
           ),
         ),
         const SizedBox(height: 8),
