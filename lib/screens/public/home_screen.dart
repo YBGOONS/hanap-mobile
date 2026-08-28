@@ -60,7 +60,10 @@ class _HomeScreenState extends State<HomeScreen> {
       return [
         StatEntry("${row['jobs_posted']}", "Jobs Posted", live: true),
         StatEntry("${row['verified_workers']}", "Verified Workers"),
-        StatEntry("${(row['satisfaction_pct'] as num).toInt()}%", "Satisfaction"),
+        StatEntry(
+          "${(row['satisfaction_pct'] as num).toInt()}%",
+          "Satisfaction",
+        ),
         StatEntry("${row['cities_covered']}", "Cities Covered"),
       ];
     } catch (_) {
@@ -79,8 +82,14 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _openLogin() => showHanapDialog(context, (_) => LoginScreen(onSwitchToRegister: _openRegister));
-  void _openRegister() => showHanapDialog(context, (_) => RegisterScreen(onSwitchToLogin: _openLogin));
+  void _openLogin() => showHanapDialog(
+    context,
+    (_) => LoginScreen(onSwitchToRegister: _openRegister),
+  );
+  void _openRegister() => showHanapDialog(
+    context,
+    (_) => RegisterScreen(onSwitchToLogin: _openLogin),
+  );
 
   void _toggleMenu() => setState(() => _menuOpen = !_menuOpen);
 
@@ -95,7 +104,12 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = key.currentContext;
       if (ctx != null) {
-        Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut, alignment: 0.5);
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+          alignment: 0.5,
+        );
       }
     });
   }
@@ -105,16 +119,28 @@ class _HomeScreenState extends State<HomeScreen> {
   void _scrollTo(GlobalKey key) {
     final ctx = key.currentContext;
     if (ctx != null) {
-      Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut, alignment: 0.5);
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+        alignment: 0.5,
+      );
     }
   }
 
   void _scrollToTop() {
-    _scrollCtrl.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
+    _scrollCtrl.animateTo(
+      0,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+    );
   }
 
   Future<void> _openGithub() async {
-    await launchUrl(Uri.parse('https://github.com/YBGOONS/hanap-mobile'), mode: LaunchMode.externalApplication);
+    await launchUrl(
+      Uri.parse('https://github.com/YBGOONS/hanap-mobile'),
+      mode: LaunchMode.externalApplication,
+    );
   }
 
   Future<void> _openEmail() async {
@@ -122,11 +148,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openPrivacyPolicy() {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()));
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()));
   }
 
   void _openTerms() {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TermsOfServiceScreen()));
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const TermsOfServiceScreen()));
   }
 
   @override
@@ -140,12 +170,28 @@ class _HomeScreenState extends State<HomeScreen> {
             controller: _scrollCtrl,
             slivers: [
               SliverToBoxAdapter(child: _buildHero(context)),
-              SliverToBoxAdapter(child: KeyedSubtree(key: _statsKey, child: _buildStats())),
+              SliverToBoxAdapter(
+                child: KeyedSubtree(key: _statsKey, child: _buildStats()),
+              ),
               SliverToBoxAdapter(child: _buildCategories()),
-              SliverToBoxAdapter(child: KeyedSubtree(key: _featuresKey, child: _buildFeatures())),
-              SliverToBoxAdapter(child: KeyedSubtree(key: _howItWorksKey, child: _buildHowItWorks())),
-              SliverToBoxAdapter(child: KeyedSubtree(key: _faqKey, child: _buildFaq())),
-              SliverToBoxAdapter(child: KeyedSubtree(key: _contactKey, child: _buildFooterCta(context))),
+              SliverToBoxAdapter(
+                child: KeyedSubtree(key: _featuresKey, child: _buildFeatures()),
+              ),
+              SliverToBoxAdapter(
+                child: KeyedSubtree(
+                  key: _howItWorksKey,
+                  child: _buildHowItWorks(),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: KeyedSubtree(key: _faqKey, child: _buildFaq()),
+              ),
+              SliverToBoxAdapter(
+                child: KeyedSubtree(
+                  key: _contactKey,
+                  child: _buildFooterCta(context),
+                ),
+              ),
               SliverToBoxAdapter(child: _buildFooter(context)),
             ],
           ),
@@ -170,7 +216,17 @@ class _HomeScreenState extends State<HomeScreen> {
             top: 0,
             left: 0,
             right: 0,
-            child: GlassNavBar(scrolled: _scrolled, menuOpen: _menuOpen, onMenuTap: _toggleMenu),
+            child: GlassNavBar(
+              scrolled: _scrolled,
+              menuOpen: _menuOpen,
+              onMenuTap: _toggleMenu,
+              onFeatures: () => _scrollTo(_featuresKey),
+              onHowItWorks: () => _scrollTo(_howItWorksKey),
+              onStats: () => _scrollTo(_statsKey),
+              onContact: () => _scrollTo(_contactKey),
+              onLogin: _openLogin,
+              onGetStarted: _openRegister,
+            ),
           ),
         ],
       ),
@@ -188,38 +244,67 @@ class _HomeScreenState extends State<HomeScreen> {
           colors: [Color(0xFF141410), AppColors.bg],
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const BadgePill(text: "Connecting Clients with Skilled Workers").fadeSlideIn(),
-          const SizedBox(height: 20),
+      child: _SiteContent(
+        maxWidth: 640,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const BadgePill(
+              text: "Connecting Clients with Skilled Workers",
+            ).fadeSlideIn(),
+            const SizedBox(height: 20),
 
-          RichText(
-            text: TextSpan(
-              style: AppText.heading(size: 36).copyWith(height: 1.05, letterSpacing: -1),
-              children: [
-                const TextSpan(text: "Find Workers.\n"),
-                TextSpan(
-                  text: "Faster.\n",
-                  style: TextStyle(color: AppColors.gold, shadows: [Shadow(color: AppColors.gold.withValues(alpha: 0.4), blurRadius: 24)]),
-                ),
-                const TextSpan(text: "Hire with\n"),
-                TextSpan(
-                  text: "Confidence.",
-                  style: TextStyle(color: AppColors.gold, shadows: [Shadow(color: AppColors.gold.withValues(alpha: 0.4), blurRadius: 24)]),
-                ),
-              ],
-            ),
-          ).fadeSlideIn(delay: 80.ms),
-          const SizedBox(height: 20),
-          Text(
-            "HANAP connects you with verified local skilled workers (carpenters, electricians, plumbers, and more) with secure escrow payments and real-time job tracking.",
-            style: AppText.body(size: 15, color: AppColors.textSecondary).copyWith(height: 1.6),
-          ).fadeSlideIn(delay: 140.ms),
-          const SizedBox(height: 28),
+            RichText(
+              text: TextSpan(
+                style: AppText.heading(
+                  size: 36,
+                ).copyWith(height: 1.05, letterSpacing: -1),
+                children: [
+                  const TextSpan(text: "Find Workers.\n"),
+                  TextSpan(
+                    text: "Faster.\n",
+                    style: TextStyle(
+                      color: AppColors.gold,
+                      shadows: [
+                        Shadow(
+                          color: AppColors.gold.withValues(alpha: 0.4),
+                          blurRadius: 24,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const TextSpan(text: "Hire with\n"),
+                  TextSpan(
+                    text: "Confidence.",
+                    style: TextStyle(
+                      color: AppColors.gold,
+                      shadows: [
+                        Shadow(
+                          color: AppColors.gold.withValues(alpha: 0.4),
+                          blurRadius: 24,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ).fadeSlideIn(delay: 80.ms),
+            const SizedBox(height: 20),
+            Text(
+              "HANAP connects you with verified local skilled workers (carpenters, electricians, plumbers, and more) with secure escrow payments and real-time job tracking.",
+              style: AppText.body(
+                size: 15,
+                color: AppColors.textSecondary,
+              ).copyWith(height: 1.6),
+            ).fadeSlideIn(delay: 140.ms),
+            const SizedBox(height: 28),
 
-          GoldButton(label: "Start Hiring Free →", onPressed: _openRegister).fadeSlideIn(delay: 200.ms),
-        ],
+            GoldButton(
+              label: "Start Hiring Free →",
+              onPressed: _openRegister,
+            ).fadeSlideIn(delay: 200.ms),
+          ],
+        ),
       ),
     );
   }
@@ -229,18 +314,22 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       color: AppColors.surf,
       padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
-      child: FutureBuilder<List<StatEntry>>(
-        future: _statsFuture,
-        builder: (context, snapshot) {
-          final stats = snapshot.data ??
-              const [
-                StatEntry("—", "Jobs Posted", live: true),
-                StatEntry("—", "Verified Workers"),
-                StatEntry("—", "Satisfaction"),
-                StatEntry("—", "Cities Covered"),
-              ];
-          return StatsGrid(stats: stats).fadeSlideIn();
-        },
+      child: _SiteContent(
+        maxWidth: 720,
+        child: FutureBuilder<List<StatEntry>>(
+          future: _statsFuture,
+          builder: (context, snapshot) {
+            final stats =
+                snapshot.data ??
+                const [
+                  StatEntry("—", "Jobs Posted", live: true),
+                  StatEntry("—", "Verified Workers"),
+                  StatEntry("—", "Satisfaction"),
+                  StatEntry("—", "Cities Covered"),
+                ];
+            return StatsGrid(stats: stats).fadeSlideIn();
+          },
+        ),
       ),
     );
   }
@@ -249,32 +338,46 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildCategories() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 48, 20, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionHeading(
-            label: "Services",
-            headingFirstLine: "Categories of",
-            headingGoldWord: "work",
-          ).fadeSlideIn(),
-          const SizedBox(height: 18),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: kCategories
-                .take(10)
-                .map((c) => Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      child: _SiteContent(
+        maxWidth: 720,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SectionHeading(
+              label: "Services",
+              headingFirstLine: "Categories of",
+              headingGoldWord: "work",
+            ).fadeSlideIn(),
+            const SizedBox(height: 18),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: kCategories
+                  .take(10)
+                  .map(
+                    (c) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.cardBg,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: AppColors.hairline),
                       ),
-                      child: Text(c, style: AppText.body(size: 13, color: AppColors.textPrimary)),
-                    ))
-                .toList(),
-          ).fadeSlideIn(delay: 100.ms),
-        ],
+                      child: Text(
+                        c,
+                        style: AppText.body(
+                          size: 13,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ).fadeSlideIn(delay: 100.ms),
+          ],
+        ),
       ),
     );
   }
@@ -282,29 +385,50 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── FEATURES ───────────────────────────────────────────────────────────
   Widget _buildFeatures() {
     final features = [
-      ("🛡️", "Verified Workers", "Every worker goes through an NBI clearance check before approval."),
-      ("⚡", "Real-Time Tracking", "From Accepted to Completed, you always know the job status."),
-      ("📍", "Near You", "Find workers near your location, fast and convenient."),
+      (
+        "🛡️",
+        "Verified Workers",
+        "Every worker goes through an NBI clearance check before approval.",
+      ),
+      (
+        "⚡",
+        "Real-Time Tracking",
+        "From Accepted to Completed, you always know the job status.",
+      ),
+      (
+        "📍",
+        "Near You",
+        "Find workers near your location, fast and convenient.",
+      ),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 48, 20, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionHeading(
-            label: "Why Hanap",
-            headingFirstLine: "Built for fast,",
-            headingGoldWord: "safe work",
-          ).fadeSlideIn(),
-          const SizedBox(height: 18),
-          ...List.generate(features.length, (i) {
-            final f = features[i];
-            return Padding(
-              padding: EdgeInsets.only(bottom: i == features.length - 1 ? 0 : 12),
-              child: FeatureCard(emoji: f.$1, title: f.$2, description: f.$3).fadeSlideIn(delay: (i * 80).ms),
-            );
-          }),
-        ],
+      child: _SiteContent(
+        maxWidth: 640,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SectionHeading(
+              label: "Why Hanap",
+              headingFirstLine: "Built for fast,",
+              headingGoldWord: "safe work",
+            ).fadeSlideIn(),
+            const SizedBox(height: 18),
+            ...List.generate(features.length, (i) {
+              final f = features[i];
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: i == features.length - 1 ? 0 : 12,
+                ),
+                child: FeatureCard(
+                  emoji: f.$1,
+                  title: f.$2,
+                  description: f.$3,
+                ).fadeSlideIn(delay: (i * 80).ms),
+              );
+            }),
+          ],
+        ),
       ),
     );
   }
@@ -313,23 +437,35 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHowItWorks() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 48, 20, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionHeading(
-            label: "Process",
-            headingFirstLine: "Three steps",
-            headingGoldWord: "and you're done",
-          ).fadeSlideIn(),
-          const SizedBox(height: 24),
-          const StepList(
-            steps: [
-              StepEntry("Post a job", "Enter the category, budget, location, and date."),
-              StepEntry("Choose a worker", "Browse nearby, verified workers."),
-              StepEntry("Track the progress", "From Accepted to Completed, in real time."),
-            ],
-          ).fadeSlideIn(delay: 100.ms),
-        ],
+      child: _SiteContent(
+        maxWidth: 640,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SectionHeading(
+              label: "Process",
+              headingFirstLine: "Three steps",
+              headingGoldWord: "and you're done",
+            ).fadeSlideIn(),
+            const SizedBox(height: 24),
+            const StepList(
+              steps: [
+                StepEntry(
+                  "Post a job",
+                  "Enter the category, budget, location, and date.",
+                ),
+                StepEntry(
+                  "Choose a worker",
+                  "Browse nearby, verified workers.",
+                ),
+                StepEntry(
+                  "Track the progress",
+                  "From Accepted to Completed, in real time.",
+                ),
+              ],
+            ).fadeSlideIn(delay: 100.ms),
+          ],
+        ),
       ),
     );
   }
@@ -337,66 +473,99 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── FAQ ────────────────────────────────────────────────────────────────
   Widget _buildFaq() {
     const faqs = [
-      FaqEntry("Is HANAP free to use?", "Yes, creating an account and posting jobs is completely free. HANAP only charges a small 10% service fee on completed, paid jobs."),
       FaqEntry(
-          "How does payment work?", "Payments go through PayMongo and are held in HANAP's escrow until you confirm the job is done. The worker only gets paid once you're satisfied."),
-      FaqEntry("How are workers verified?", "Every worker submits a valid NBI Clearance, which our admin team reviews and approves before they can accept jobs."),
-      FaqEntry("What if I'm not satisfied with the work?", "You can request a refund with photo evidence directly from the job details. Our admin team reviews every request."),
-      FaqEntry("Can I cancel a job after posting it?", "Yes, you can edit or delete a job posting anytime before a worker accepts it."),
+        "Is HANAP free to use?",
+        "Yes, creating an account and posting jobs is completely free. HANAP only charges a small 10% service fee on completed, paid jobs.",
+      ),
+      FaqEntry(
+        "How does payment work?",
+        "Payments go through PayMongo and are held in HANAP's escrow until you confirm the job is done. The worker only gets paid once you're satisfied.",
+      ),
+      FaqEntry(
+        "How are workers verified?",
+        "Every worker submits a valid NBI Clearance, which our admin team reviews and approves before they can accept jobs.",
+      ),
+      FaqEntry(
+        "What if I'm not satisfied with the work?",
+        "You can request a refund with photo evidence directly from the job details. Our admin team reviews every request.",
+      ),
+      FaqEntry(
+        "Can I cancel a job after posting it?",
+        "Yes, you can edit or delete a job posting anytime before a worker accepts it.",
+      ),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 48, 20, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SectionHeading(
-            label: "Support",
-            headingFirstLine: "Frequently asked",
-            headingGoldWord: "questions",
-          ).fadeSlideIn(),
-          const SizedBox(height: 24),
-          for (var i = 0; i < faqs.length; i++) FaqTile(entry: faqs[i]).fadeSlideIn(delay: (i * 60).ms),
-        ],
+      child: _SiteContent(
+        maxWidth: 640,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SectionHeading(
+              label: "Support",
+              headingFirstLine: "Frequently asked",
+              headingGoldWord: "questions",
+            ).fadeSlideIn(),
+            const SizedBox(height: 24),
+            for (var i = 0; i < faqs.length; i++)
+              FaqTile(entry: faqs[i]).fadeSlideIn(delay: (i * 60).ms),
+          ],
+        ),
       ),
     );
   }
 
   // ── FOOTER CTA ─────────────────────────────────────────────────────────
   Widget _buildFooterCta(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 40, 20, 40),
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: AppColors.surf,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.goldBorder),
-        boxShadow: [BoxShadow(color: AppColors.gold.withValues(alpha: 0.12), blurRadius: 40, offset: const Offset(0, 12))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          RichText(
-            text: TextSpan(
-              style: AppText.heading(size: 22),
-              children: [
-                const TextSpan(text: "Ready to "),
-                TextSpan(
-                  text: "get started?",
-                  style: AppText.heading(size: 22, color: AppColors.gold).copyWith(
-                    shadows: [Shadow(color: AppColors.gold.withValues(alpha: 0.5), blurRadius: 16)],
-                  ),
-                ),
-              ],
+    return _SiteContent(
+      maxWidth: 640,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(20, 40, 20, 40),
+        padding: const EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          color: AppColors.surf,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.goldBorder),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.gold.withValues(alpha: 0.12),
+              blurRadius: 40,
+              offset: const Offset(0, 12),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            "Join HANAP as a client or worker today.",
-            style: AppText.body(size: 13, color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 20),
-          GoldButton(label: "Create Account", onPressed: _openRegister),
-        ],
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            RichText(
+              text: TextSpan(
+                style: AppText.heading(size: 22),
+                children: [
+                  const TextSpan(text: "Ready to "),
+                  TextSpan(
+                    text: "get started?",
+                    style: AppText.heading(size: 22, color: AppColors.gold)
+                        .copyWith(
+                          shadows: [
+                            Shadow(
+                              color: AppColors.gold.withValues(alpha: 0.5),
+                              blurRadius: 16,
+                            ),
+                          ],
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Join HANAP as a client or worker today.",
+              style: AppText.body(size: 13, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 20),
+            GoldButton(label: "Create Account", onPressed: _openRegister),
+          ],
+        ),
       ),
     ).fadeSlideIn();
   }
@@ -405,64 +574,107 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildFooter(BuildContext context) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 40, 20, 28),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.hairline))),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const HanapWordmark(size: 22),
-          const SizedBox(height: 10),
-          Text("A simplified way to find and hire verified skilled workers.", style: AppText.body(size: 13, color: AppColors.textSecondary)),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              InkWell(
-                onTap: _openEmail,
-                child: Text("HANAP@gmail.com", style: AppText.body(size: 13, color: AppColors.textSecondary)),
-              ),
-              const SizedBox(width: 14),
-              InkWell(
-                onTap: _openGithub,
-                borderRadius: BorderRadius.circular(6),
-                child: Icon(Icons.code, size: 20, color: AppColors.textSecondary),
-              ),
-            ],
-          ),
-          const SizedBox(height: 36),
-          Wrap(
-            spacing: 40,
-            runSpacing: 28,
-            children: [
-              _FooterColumn(
-                title: "Product",
-                links: [
-                  (label: "About", onTap: _scrollToTop),
-                  (label: "Demo", onTap: () => _scrollTo(_howItWorksKey)),
-                ],
-              ),
-              _FooterColumn(
-                title: "Support",
-                links: [
-                  (label: "FAQ", onTap: () => _scrollTo(_faqKey)),
-                ],
-              ),
-              _FooterColumn(
-                title: "Legal",
-                links: [
-                  (label: "Privacy Policy", onTap: _openPrivacyPolicy),
-                  (label: "Terms of Service", onTap: _openTerms),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 36),
-          Container(height: 1, color: AppColors.hairline),
-          const SizedBox(height: 20),
-          Text("© 2026 HANAP. All rights reserved.", style: AppText.body(size: 11.5, color: AppColors.textTertiary)),
-          const SizedBox(height: 4),
-          Text("A solo project made by Giovanni Lopez", style: AppText.body(size: 11.5, color: AppColors.textTertiary)),
-        ],
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: AppColors.hairline)),
+      ),
+      child: _SiteContent(
+        maxWidth: 960,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const HanapWordmark(size: 22),
+            const SizedBox(height: 10),
+            Text(
+              "A simplified way to find and hire verified skilled workers.",
+              style: AppText.body(size: 13, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                InkWell(
+                  onTap: _openEmail,
+                  child: Text(
+                    "HANAP@gmail.com",
+                    style: AppText.body(
+                      size: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                InkWell(
+                  onTap: _openGithub,
+                  borderRadius: BorderRadius.circular(6),
+                  child: Icon(
+                    Icons.code,
+                    size: 20,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 36),
+            Wrap(
+              spacing: 40,
+              runSpacing: 28,
+              children: [
+                _FooterColumn(
+                  title: "Product",
+                  links: [
+                    (label: "About", onTap: _scrollToTop),
+                    (label: "Demo", onTap: () => _scrollTo(_howItWorksKey)),
+                  ],
+                ),
+                _FooterColumn(
+                  title: "Support",
+                  links: [(label: "FAQ", onTap: () => _scrollTo(_faqKey))],
+                ),
+                _FooterColumn(
+                  title: "Legal",
+                  links: [
+                    (label: "Privacy Policy", onTap: _openPrivacyPolicy),
+                    (label: "Terms of Service", onTap: _openTerms),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 36),
+            Container(height: 1, color: AppColors.hairline),
+            const SizedBox(height: 20),
+            Text(
+              "© 2026 HANAP. All rights reserved.",
+              style: AppText.body(size: 11.5, color: AppColors.textTertiary),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              "A solo project made by Giovanni Lopez",
+              style: AppText.body(size: 11.5, color: AppColors.textTertiary),
+            ),
+          ],
+        ),
       ),
     ).fadeSlideIn();
+  }
+}
+
+/// Caps a section's content width and centers it once the browser is wider
+/// than [maxWidth] — has no effect at all below that (the incoming width
+/// from the parent Container is already narrower), so mobile layouts are
+/// completely unaffected. Standard "centered column" web pattern, applied
+/// per-section here so each one can keep its own natural reading width.
+class _SiteContent extends StatelessWidget {
+  final double maxWidth;
+  final Widget child;
+  const _SiteContent({required this.maxWidth, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: child,
+      ),
+    );
   }
 }
 
@@ -478,14 +690,24 @@ class _FooterColumn extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: AppText.body(size: 13, weight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text(
+            title,
+            style: AppText.body(
+              size: 13,
+              weight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
           const SizedBox(height: 14),
           for (final link in links)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: InkWell(
                 onTap: link.onTap,
-                child: Text(link.label, style: AppText.body(size: 13, color: AppColors.textSecondary)),
+                child: Text(
+                  link.label,
+                  style: AppText.body(size: 13, color: AppColors.textSecondary),
+                ),
               ),
             ),
         ],
@@ -528,9 +750,18 @@ class _MobileMenuOverlay extends StatelessWidget {
               _MenuLink(label: "Stats", onTap: onStats),
               _MenuLink(label: "Contact", onTap: onContact),
               const SizedBox(height: 24),
-              SizedBox(width: 260, child: GoldButton(label: "Get Started Free →", onPressed: onGetStarted)),
+              SizedBox(
+                width: 260,
+                child: GoldButton(
+                  label: "Get Started Free →",
+                  onPressed: onGetStarted,
+                ),
+              ),
               const SizedBox(height: 12),
-              SizedBox(width: 260, child: HanapOutlineButton(label: "Log In", onPressed: onLogin)),
+              SizedBox(
+                width: 260,
+                child: HanapOutlineButton(label: "Log In", onPressed: onLogin),
+              ),
             ],
           ),
         ),
@@ -551,7 +782,13 @@ class _MenuLink extends StatelessWidget {
       borderRadius: BorderRadius.circular(10),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 32),
-        child: Text(label, style: AppText.heading(size: 22, color: Colors.white.withValues(alpha: 0.85))),
+        child: Text(
+          label,
+          style: AppText.heading(
+            size: 22,
+            color: Colors.white.withValues(alpha: 0.85),
+          ),
+        ),
       ),
     );
   }
