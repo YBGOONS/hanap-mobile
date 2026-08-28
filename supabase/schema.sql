@@ -958,5 +958,14 @@ as $$
     (select count(*) from public.jobs),
     (select count(*) from public.profiles where role = 'worker' and status = 'active'),
     (select coalesce(round(avg(rating) / 5.0 * 100), 0) from public.ratings),
-    (select count(distinct split_part(location, ',', 1)) from public.profiles where role = 'worker' and status = 'active' and location is not null and location <> '');
+    -- Cities Covered = union of where active workers are AND where jobs get
+    -- posted — a city with demand (jobs) but no worker yet still counts,
+    -- same the other way around.
+    (
+      select count(distinct city) from (
+        select split_part(location, ',', 1) as city from public.profiles where role = 'worker' and status = 'active' and location is not null and location <> ''
+        union
+        select split_part(location, ',', 1) as city from public.jobs where location is not null and location <> ''
+      ) cities
+    );
 $$;
