@@ -41,11 +41,24 @@ class DashboardHeaderCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: DashboardText.body(size: 13, weight: FontWeight.w600, color: Colors.white70)),
+                Text(
+                  title,
+                  style: DashboardText.body(
+                    size: 13,
+                    weight: FontWeight.w600,
+                    color: Colors.white70,
+                  ),
+                ),
                 const SizedBox(height: 6),
-                Text("Welcome back, $greetingName!", style: DashboardText.heading(size: 20, color: Colors.white)),
+                Text(
+                  "Welcome back, $greetingName!",
+                  style: DashboardText.heading(size: 20, color: Colors.white),
+                ),
                 const SizedBox(height: 4),
-                Text(subtitle, style: DashboardText.body(size: 13, color: Colors.white70)),
+                Text(
+                  subtitle,
+                  style: DashboardText.body(size: 13, color: Colors.white70),
+                ),
               ],
             ),
           ),
@@ -63,7 +76,13 @@ class DashboardStatCard extends StatelessWidget {
   final Color accentColor;
   final IconData? icon;
 
-  const DashboardStatCard({super.key, required this.value, required this.label, required this.accentColor, this.icon});
+  const DashboardStatCard({
+    super.key,
+    required this.value,
+    required this.label,
+    required this.accentColor,
+    this.icon,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -74,7 +93,11 @@ class DashboardStatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border(left: BorderSide(color: accentColor, width: 3)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Column(
@@ -84,11 +107,18 @@ class DashboardStatCard extends StatelessWidget {
             Icon(icon, size: 20, color: accentColor),
             const SizedBox(height: 10),
           ],
-          Text(value, style: DashboardText.heading(size: 26, color: Colors.black87)),
+          Text(
+            value,
+            style: DashboardText.heading(size: 26, color: Colors.black87),
+          ),
           const SizedBox(height: 4),
           Text(
             label.toUpperCase(),
-            style: DashboardText.body(size: 11, weight: FontWeight.w700, color: DashboardColors.muted).copyWith(letterSpacing: 0.6),
+            style: DashboardText.body(
+              size: 11,
+              weight: FontWeight.w700,
+              color: DashboardColors.muted,
+            ).copyWith(letterSpacing: 0.6),
           ),
         ],
       ),
@@ -132,7 +162,11 @@ class DashboardStatusBadge extends StatelessWidget {
       ),
       child: Text(
         style.label.toUpperCase(),
-        style: DashboardText.body(size: 10, weight: FontWeight.w700, color: style.color).copyWith(letterSpacing: 0.4),
+        style: DashboardText.body(
+          size: 10,
+          weight: FontWeight.w700,
+          color: style.color,
+        ).copyWith(letterSpacing: 0.4),
       ),
     );
   }
@@ -144,7 +178,12 @@ class DashboardStateMessage extends StatelessWidget {
   final String title;
   final String? message;
   final Widget? action;
-  const DashboardStateMessage({super.key, required this.title, this.message, this.action});
+  const DashboardStateMessage({
+    super.key,
+    required this.title,
+    this.message,
+    this.action,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -153,17 +192,46 @@ class DashboardStateMessage extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(title, style: DashboardText.heading(size: 15, color: Colors.black87), textAlign: TextAlign.center),
+          Text(
+            title,
+            style: DashboardText.heading(size: 15, color: Colors.black87),
+            textAlign: TextAlign.center,
+          ),
           if (message != null) ...[
             const SizedBox(height: 6),
-            Text(message!, style: DashboardText.body(size: 12, color: DashboardColors.muted), textAlign: TextAlign.center),
+            Text(
+              message!,
+              style: DashboardText.body(size: 12, color: DashboardColors.muted),
+              textAlign: TextAlign.center,
+            ),
           ],
-          if (action != null) ...[
-            const SizedBox(height: 16),
-            action!,
-          ],
+          if (action != null) ...[const SizedBox(height: 16), action!],
         ],
       ),
+    );
+  }
+}
+
+/// Vertically centers an empty/error [DashboardStateMessage] in the visible
+/// viewport instead of it floating right under the app bar — while staying
+/// pull-to-refresh scrollable (RefreshIndicator needs an always-scrollable
+/// child even when there's nothing to scroll).
+class CenteredEmptyState extends StatelessWidget {
+  final Widget child;
+  const CenteredEmptyState({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(child: child),
+          ),
+        );
+      },
     );
   }
 }
@@ -174,7 +242,12 @@ class RecentJobListItem extends StatelessWidget {
   final String location;
   final String status;
 
-  const RecentJobListItem({super.key, required this.title, required this.location, required this.status});
+  const RecentJobListItem({
+    super.key,
+    required this.title,
+    required this.location,
+    required this.status,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -192,9 +265,22 @@ class RecentJobListItem extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: DashboardText.heading(size: 14, weight: FontWeight.w700, color: Colors.black87)),
+                Text(
+                  title,
+                  style: DashboardText.heading(
+                    size: 14,
+                    weight: FontWeight.w700,
+                    color: Colors.black87,
+                  ),
+                ),
                 const SizedBox(height: 3),
-                Text(location, style: DashboardText.body(size: 12, color: DashboardColors.muted)),
+                Text(
+                  location,
+                  style: DashboardText.body(
+                    size: 12,
+                    color: DashboardColors.muted,
+                  ),
+                ),
               ],
             ),
           ),
@@ -213,7 +299,10 @@ class DashboardComingSoonTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Text("$label (coming soon)", style: DashboardText.body(size: 14, color: DashboardColors.muted)),
+      child: Text(
+        "$label (coming soon)",
+        style: DashboardText.body(size: 14, color: DashboardColors.muted),
+      ),
     );
   }
 }
@@ -250,13 +339,20 @@ class SidebarDestination {
 class DashboardSidebar extends StatelessWidget {
   final String greeting;
   final List<SidebarDestination> destinations;
-  const DashboardSidebar({super.key, required this.greeting, required this.destinations});
+  const DashboardSidebar({
+    super.key,
+    required this.greeting,
+    required this.destinations,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: 232,
-      decoration: const BoxDecoration(color: Colors.white, border: Border(right: BorderSide(color: DashboardColors.border))),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(right: BorderSide(color: DashboardColors.border)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -267,14 +363,20 @@ class DashboardSidebar extends StatelessWidget {
                 style: DashboardText.heading(size: 20, color: Colors.black87),
                 children: const [
                   TextSpan(text: "HAN"),
-                  TextSpan(text: "AP", style: TextStyle(color: DashboardColors.accent)),
+                  TextSpan(
+                    text: "AP",
+                    style: TextStyle(color: DashboardColors.accent),
+                  ),
                 ],
               ),
             ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-            child: Text(greeting, style: DashboardText.body(size: 13, color: DashboardColors.muted)),
+            child: Text(
+              greeting,
+              style: DashboardText.body(size: 13, color: DashboardColors.muted),
+            ),
           ),
           const Divider(height: 1, color: DashboardColors.border),
           const SizedBox(height: 8),
@@ -291,9 +393,13 @@ class _SidebarItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = destination.selected ? DashboardColors.primary : DashboardColors.muted;
+    final color = destination.selected
+        ? DashboardColors.primary
+        : DashboardColors.muted;
     return Material(
-      color: destination.selected ? DashboardColors.primary.withValues(alpha: 0.08) : Colors.transparent,
+      color: destination.selected
+          ? DashboardColors.primary.withValues(alpha: 0.08)
+          : Colors.transparent,
       child: InkWell(
         onTap: destination.onTap,
         child: Padding(
@@ -307,8 +413,12 @@ class _SidebarItem extends StatelessWidget {
                   destination.label,
                   style: DashboardText.body(
                     size: 14,
-                    weight: destination.selected ? FontWeight.w700 : FontWeight.w500,
-                    color: destination.selected ? DashboardColors.primary : Colors.black87,
+                    weight: destination.selected
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    color: destination.selected
+                        ? DashboardColors.primary
+                        : Colors.black87,
                   ),
                 ),
               ),
@@ -339,7 +449,10 @@ Future<String?> showReasonDialog(
           final canSubmit = controller.text.trim().isNotEmpty;
           return AlertDialog(
             backgroundColor: Colors.white,
-            title: Text(title, style: DashboardText.heading(size: 17, color: Colors.black87)),
+            title: Text(
+              title,
+              style: DashboardText.heading(size: 17, color: Colors.black87),
+            ),
             content: TextField(
               controller: controller,
               autofocus: true,
@@ -351,12 +464,29 @@ Future<String?> showReasonDialog(
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(),
-                child: Text("Cancel", style: DashboardText.body(size: 14, weight: FontWeight.w600, color: DashboardColors.muted)),
+                child: Text(
+                  "Cancel",
+                  style: DashboardText.body(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: DashboardColors.muted,
+                  ),
+                ),
               ),
               ElevatedButton(
-                onPressed: canSubmit ? () => Navigator.of(dialogContext).pop(controller.text.trim()) : null,
-                style: ElevatedButton.styleFrom(backgroundColor: DashboardColors.accent, foregroundColor: Colors.white),
-                child: Text(confirmLabel, style: DashboardText.body(size: 14, weight: FontWeight.w700)),
+                onPressed: canSubmit
+                    ? () => Navigator.of(
+                        dialogContext,
+                      ).pop(controller.text.trim())
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DashboardColors.accent,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text(
+                  confirmLabel,
+                  style: DashboardText.body(size: 14, weight: FontWeight.w700),
+                ),
               ),
             ],
           );
@@ -383,7 +513,10 @@ Future<({int rating, String comment})?> showRatingDialog(
         builder: (dialogContext, setState) {
           return AlertDialog(
             backgroundColor: Colors.white,
-            title: Text(title, style: DashboardText.heading(size: 17, color: Colors.black87)),
+            title: Text(
+              title,
+              style: DashboardText.heading(size: 17, color: Colors.black87),
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -407,19 +540,36 @@ Future<({int rating, String comment})?> showRatingDialog(
                   controller: controller,
                   maxLines: 3,
                   style: DashboardText.body(size: 14, color: Colors.black87),
-                  decoration: dashboardInputDecoration(label: "Comment (optional)"),
+                  decoration: dashboardInputDecoration(
+                    label: "Comment (optional)",
+                  ),
                 ),
               ],
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(),
-                child: Text("Cancel", style: DashboardText.body(size: 14, weight: FontWeight.w600, color: DashboardColors.muted)),
+                child: Text(
+                  "Cancel",
+                  style: DashboardText.body(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: DashboardColors.muted,
+                  ),
+                ),
               ),
               ElevatedButton(
-                onPressed: () => Navigator.of(dialogContext).pop((rating: selected, comment: controller.text.trim())),
-                style: ElevatedButton.styleFrom(backgroundColor: DashboardColors.accent, foregroundColor: Colors.white),
-                child: Text("Submit", style: DashboardText.body(size: 14, weight: FontWeight.w700)),
+                onPressed: () => Navigator.of(
+                  dialogContext,
+                ).pop((rating: selected, comment: controller.text.trim())),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DashboardColors.accent,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text(
+                  "Submit",
+                  style: DashboardText.body(size: 14, weight: FontWeight.w700),
+                ),
               ),
             ],
           );
@@ -433,7 +583,9 @@ Future<({int rating, String comment})?> showRatingDialog(
 /// input (same division of labor as [showReasonDialog]/[showRatingDialog])
 /// — the caller uploads the file to the refund-evidence bucket and calls
 /// request_refund with the resulting path.
-Future<({String reason, PlatformFile file})?> showRefundRequestDialog(BuildContext context) {
+Future<({String reason, PlatformFile file})?> showRefundRequestDialog(
+  BuildContext context,
+) {
   final controller = TextEditingController();
   PlatformFile? file;
   return showDialog<({String reason, PlatformFile file})>(
@@ -444,7 +596,10 @@ Future<({String reason, PlatformFile file})?> showRefundRequestDialog(BuildConte
           final canSubmit = controller.text.trim().isNotEmpty && file != null;
           return AlertDialog(
             backgroundColor: Colors.white,
-            title: Text("Request a refund", style: DashboardText.heading(size: 17, color: Colors.black87)),
+            title: Text(
+              "Request a refund",
+              style: DashboardText.heading(size: 17, color: Colors.black87),
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -453,7 +608,10 @@ Future<({String reason, PlatformFile file})?> showRefundRequestDialog(BuildConte
                   controller: controller,
                   maxLines: 3,
                   style: DashboardText.body(size: 14, color: Colors.black87),
-                  decoration: dashboardInputDecoration(label: "Reason", hint: "Why are you requesting a refund?"),
+                  decoration: dashboardInputDecoration(
+                    label: "Reason",
+                    hint: "Why are you requesting a refund?",
+                  ),
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 12),
@@ -470,18 +628,31 @@ Future<({String reason, PlatformFile file})?> showRefundRequestDialog(BuildConte
                   },
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
-                      color: file != null ? DashboardColors.accent.withValues(alpha: 0.08) : DashboardColors.bg,
+                      color: file != null
+                          ? DashboardColors.accent.withValues(alpha: 0.08)
+                          : DashboardColors.bg,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: file != null ? DashboardColors.accent : DashboardColors.border),
+                      border: Border.all(
+                        color: file != null
+                            ? DashboardColors.accent
+                            : DashboardColors.border,
+                      ),
                     ),
                     child: Row(
                       children: [
                         Icon(
-                          file != null ? Icons.check_circle : Icons.camera_alt_outlined,
+                          file != null
+                              ? Icons.check_circle
+                              : Icons.camera_alt_outlined,
                           size: 18,
-                          color: file != null ? DashboardColors.accent : DashboardColors.muted,
+                          color: file != null
+                              ? DashboardColors.accent
+                              : DashboardColors.muted,
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -490,8 +661,12 @@ Future<({String reason, PlatformFile file})?> showRefundRequestDialog(BuildConte
                             overflow: TextOverflow.ellipsis,
                             style: DashboardText.body(
                               size: 13,
-                              weight: file != null ? FontWeight.w600 : FontWeight.w400,
-                              color: file != null ? Colors.black87 : DashboardColors.muted,
+                              weight: file != null
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              color: file != null
+                                  ? Colors.black87
+                                  : DashboardColors.muted,
                             ),
                           ),
                         ),
@@ -504,12 +679,29 @@ Future<({String reason, PlatformFile file})?> showRefundRequestDialog(BuildConte
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(),
-                child: Text("Cancel", style: DashboardText.body(size: 14, weight: FontWeight.w600, color: DashboardColors.muted)),
+                child: Text(
+                  "Cancel",
+                  style: DashboardText.body(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: DashboardColors.muted,
+                  ),
+                ),
               ),
               ElevatedButton(
-                onPressed: canSubmit ? () => Navigator.of(dialogContext).pop((reason: controller.text.trim(), file: file!)) : null,
-                style: ElevatedButton.styleFrom(backgroundColor: DashboardColors.accent, foregroundColor: Colors.white),
-                child: Text("Submit", style: DashboardText.body(size: 14, weight: FontWeight.w700)),
+                onPressed: canSubmit
+                    ? () => Navigator.of(
+                        dialogContext,
+                      ).pop((reason: controller.text.trim(), file: file!))
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DashboardColors.accent,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text(
+                  "Submit",
+                  style: DashboardText.body(size: 14, weight: FontWeight.w700),
+                ),
               ),
             ],
           );
@@ -533,17 +725,41 @@ Future<bool> showConfirmDialog(
     context: context,
     builder: (dialogContext) => AlertDialog(
       backgroundColor: Colors.white,
-      title: Text(title, style: DashboardText.heading(size: 17, color: Colors.black87)),
-      content: Text(message, style: DashboardText.body(size: 13, color: DashboardColors.muted).copyWith(height: 1.4)),
+      title: Text(
+        title,
+        style: DashboardText.heading(size: 17, color: Colors.black87),
+      ),
+      content: Text(
+        message,
+        style: DashboardText.body(
+          size: 13,
+          color: DashboardColors.muted,
+        ).copyWith(height: 1.4),
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: Text("Cancel", style: DashboardText.body(size: 14, weight: FontWeight.w600, color: DashboardColors.muted)),
+          child: Text(
+            "Cancel",
+            style: DashboardText.body(
+              size: 14,
+              weight: FontWeight.w600,
+              color: DashboardColors.muted,
+            ),
+          ),
         ),
         ElevatedButton(
           onPressed: () => Navigator.of(dialogContext).pop(true),
-          style: ElevatedButton.styleFrom(backgroundColor: destructive ? const Color(0xFFC62828) : DashboardColors.primary, foregroundColor: Colors.white),
-          child: Text(confirmLabel, style: DashboardText.body(size: 14, weight: FontWeight.w700)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: destructive
+                ? const Color(0xFFC62828)
+                : DashboardColors.primary,
+            foregroundColor: Colors.white,
+          ),
+          child: Text(
+            confirmLabel,
+            style: DashboardText.body(size: 14, weight: FontWeight.w700),
+          ),
         ),
       ],
     ),
@@ -567,14 +783,30 @@ Future<bool> showBookingSummaryDialog(
     context: context,
     builder: (dialogContext) => AlertDialog(
       backgroundColor: Colors.white,
-      title: Text("Booking Summary", style: DashboardText.heading(size: 17, color: Colors.black87)),
+      title: Text(
+        "Booking Summary",
+        style: DashboardText.heading(size: 17, color: Colors.black87),
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _DetailRow(icon: Icons.build_outlined, label: "Worker", value: workerName),
-          _DetailRow(icon: Icons.category_outlined, label: "Service", value: category),
-          if (scheduledDate != null) _DetailRow(icon: Icons.event_outlined, label: "Schedule", value: _detailDate(scheduledDate)),
+          _DetailRow(
+            icon: Icons.build_outlined,
+            label: "Worker",
+            value: workerName,
+          ),
+          _DetailRow(
+            icon: Icons.category_outlined,
+            label: "Service",
+            value: category,
+          ),
+          if (scheduledDate != null)
+            _DetailRow(
+              icon: Icons.event_outlined,
+              label: "Schedule",
+              value: _detailDate(scheduledDate),
+            ),
           const Divider(height: 24),
           _SummaryLine(label: "Labor Fee", value: budget),
           _SummaryLine(label: "HANAP Service Fee (10%)", value: fee),
@@ -590,12 +822,25 @@ Future<bool> showBookingSummaryDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: Text("Cancel", style: DashboardText.body(size: 14, weight: FontWeight.w600, color: DashboardColors.muted)),
+          child: Text(
+            "Cancel",
+            style: DashboardText.body(
+              size: 14,
+              weight: FontWeight.w600,
+              color: DashboardColors.muted,
+            ),
+          ),
         ),
         ElevatedButton(
           onPressed: () => Navigator.of(dialogContext).pop(true),
-          style: ElevatedButton.styleFrom(backgroundColor: DashboardColors.primary, foregroundColor: Colors.white),
-          child: Text("Confirm & Pay ₱${total.toStringAsFixed(0)}", style: DashboardText.body(size: 14, weight: FontWeight.w700)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: DashboardColors.primary,
+            foregroundColor: Colors.white,
+          ),
+          child: Text(
+            "Confirm & Pay ₱${total.toStringAsFixed(0)}",
+            style: DashboardText.body(size: 14, weight: FontWeight.w700),
+          ),
         ),
       ],
     ),
@@ -607,7 +852,11 @@ class _SummaryLine extends StatelessWidget {
   final String label;
   final double value;
   final bool bold;
-  const _SummaryLine({required this.label, required this.value, this.bold = false});
+  const _SummaryLine({
+    required this.label,
+    required this.value,
+    this.bold = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -619,7 +868,10 @@ class _SummaryLine extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: bold ? style : style.copyWith(color: DashboardColors.muted)),
+          Text(
+            label,
+            style: bold ? style : style.copyWith(color: DashboardColors.muted),
+          ),
           Text("₱${value.toStringAsFixed(0)}", style: style),
         ],
       ),
@@ -627,21 +879,26 @@ class _SummaryLine extends StatelessWidget {
   }
 }
 
-String _detailDate(DateTime d) => "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+String _detailDate(DateTime d) =>
+    "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
 
 String _paymentDetailLabel(String status) => switch (status) {
-      'paid' => 'In Escrow',
-      'refund_requested' => 'Refund Requested',
-      'refunded' => 'Refunded',
-      'released' => 'Paid',
-      _ => status,
-    };
+  'paid' => 'In Escrow',
+  'refund_requested' => 'Refund Requested',
+  'refunded' => 'Refunded',
+  'released' => 'Paid',
+  _ => status,
+};
 
 class _DetailRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
-  const _DetailRow({required this.icon, required this.label, required this.value});
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -652,8 +909,20 @@ class _DetailRow extends StatelessWidget {
         children: [
           Icon(icon, size: 15, color: DashboardColors.muted),
           const SizedBox(width: 8),
-          Text("$label: ", style: DashboardText.body(size: 13, color: DashboardColors.muted)),
-          Expanded(child: Text(value, style: DashboardText.body(size: 13, weight: FontWeight.w600, color: Colors.black87))),
+          Text(
+            "$label: ",
+            style: DashboardText.body(size: 13, color: DashboardColors.muted),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: DashboardText.body(
+                size: 13,
+                weight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -675,7 +944,9 @@ class _WeatherCard extends StatefulWidget {
 }
 
 class _WeatherCardState extends State<_WeatherCard> {
-  late final Future<WeatherInfo?> _future = WeatherService().fetchForLocation(widget.location);
+  late final Future<WeatherInfo?> _future = WeatherService().fetchForLocation(
+    widget.location,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -686,12 +957,28 @@ class _WeatherCardState extends State<_WeatherCard> {
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(color: DashboardColors.bg, borderRadius: BorderRadius.circular(10)),
+            decoration: BoxDecoration(
+              color: DashboardColors.bg,
+              borderRadius: BorderRadius.circular(10),
+            ),
             child: Row(
               children: [
-                const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: DashboardColors.muted)),
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: DashboardColors.muted,
+                  ),
+                ),
                 const SizedBox(width: 10),
-                Text("Checking the weather…", style: DashboardText.body(size: 12.5, color: DashboardColors.muted)),
+                Text(
+                  "Checking the weather…",
+                  style: DashboardText.body(
+                    size: 12.5,
+                    color: DashboardColors.muted,
+                  ),
+                ),
               ],
             ),
           );
@@ -703,10 +990,16 @@ class _WeatherCardState extends State<_WeatherCard> {
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(color: DashboardColors.bg, borderRadius: BorderRadius.circular(10)),
+          decoration: BoxDecoration(
+            color: DashboardColors.bg,
+            borderRadius: BorderRadius.circular(10),
+          ),
           child: Row(
             children: [
-              Text(weatherEmoji(weather.weatherCode, isDay: weather.isDay), style: const TextStyle(fontSize: 22)),
+              Text(
+                weatherEmoji(weather.weatherCode, isDay: weather.isDay),
+                style: const TextStyle(fontSize: 22),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -714,14 +1007,30 @@ class _WeatherCardState extends State<_WeatherCard> {
                   children: [
                     Text(
                       "${weather.temperatureC.round()}°C · ${weatherLabel(weather.weatherCode)}",
-                      style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.black87),
+                      style: DashboardText.body(
+                        size: 13,
+                        weight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
                     ),
-                    Text("Now in ${weather.placeName}", style: DashboardText.body(size: 11.5, color: DashboardColors.muted)),
+                    Text(
+                      "Now in ${weather.placeName}",
+                      style: DashboardText.body(
+                        size: 11.5,
+                        color: DashboardColors.muted,
+                      ),
+                    ),
                   ],
                 ),
               ),
               if (weather.precipitationMm > 0)
-                Text("🌧️ ${weather.precipitationMm.toStringAsFixed(1)}mm", style: DashboardText.body(size: 11.5, color: DashboardColors.muted)),
+                Text(
+                  "🌧️ ${weather.precipitationMm.toStringAsFixed(1)}mm",
+                  style: DashboardText.body(
+                    size: 11.5,
+                    color: DashboardColors.muted,
+                  ),
+                ),
             ],
           ),
         );
@@ -739,7 +1048,9 @@ void showJobDetailsSheet(BuildContext context, Job job) {
     context: context,
     backgroundColor: Colors.white,
     isScrollControlled: true,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
     builder: (context) {
       return DraggableScrollableSheet(
         initialChildSize: 0.6,
@@ -757,38 +1068,92 @@ void showJobDetailsSheet(BuildContext context, Job job) {
                   child: Container(
                     width: 40,
                     height: 4,
-                    decoration: BoxDecoration(color: DashboardColors.border, borderRadius: BorderRadius.circular(2)),
+                    decoration: BoxDecoration(
+                      color: DashboardColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 18),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: Text(job.category, style: DashboardText.heading(size: 19, color: Colors.black87))),
+                    Expanded(
+                      child: Text(
+                        job.category,
+                        style: DashboardText.heading(
+                          size: 19,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
                     DashboardStatusBadge(status: job.status),
                   ],
                 ),
                 const SizedBox(height: 2),
                 Text(
                   jobRefNo(job.id),
-                  style: DashboardText.body(size: 11.5, weight: FontWeight.w600, color: DashboardColors.muted),
+                  style: DashboardText.body(
+                    size: 11.5,
+                    weight: FontWeight.w600,
+                    color: DashboardColors.muted,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   job.description,
-                  style: DashboardText.body(size: 14, color: Colors.black87).copyWith(height: 1.5),
+                  style: DashboardText.body(
+                    size: 14,
+                    color: Colors.black87,
+                  ).copyWith(height: 1.5),
                 ),
                 const SizedBox(height: 18),
-                if (job.budget != null) _DetailRow(icon: Icons.payments_outlined, label: "Budget", value: "₱${job.budget!.toStringAsFixed(0)}"),
-                _DetailRow(icon: Icons.location_on_outlined, label: "Location", value: job.location),
-                if (job.scheduledDate != null) _DetailRow(icon: Icons.event_outlined, label: "Scheduled", value: _detailDate(job.scheduledDate!)),
-                if (job.clientName != null) _DetailRow(icon: Icons.person_outline, label: "Client", value: job.clientName!),
-                if (job.workerName != null) _DetailRow(icon: Icons.build_outlined, label: "Worker", value: job.workerName!),
-                _DetailRow(icon: Icons.calendar_today_outlined, label: "Posted", value: _detailDate(job.createdAt)),
+                if (job.budget != null)
+                  _DetailRow(
+                    icon: Icons.payments_outlined,
+                    label: "Budget",
+                    value: "₱${job.budget!.toStringAsFixed(0)}",
+                  ),
+                _DetailRow(
+                  icon: Icons.location_on_outlined,
+                  label: "Location",
+                  value: job.location,
+                ),
+                if (job.scheduledDate != null)
+                  _DetailRow(
+                    icon: Icons.event_outlined,
+                    label: "Scheduled",
+                    value: _detailDate(job.scheduledDate!),
+                  ),
+                if (job.clientName != null)
+                  _DetailRow(
+                    icon: Icons.person_outline,
+                    label: "Client",
+                    value: job.clientName!,
+                  ),
+                if (job.workerName != null)
+                  _DetailRow(
+                    icon: Icons.build_outlined,
+                    label: "Worker",
+                    value: job.workerName!,
+                  ),
+                _DetailRow(
+                  icon: Icons.calendar_today_outlined,
+                  label: "Posted",
+                  value: _detailDate(job.createdAt),
+                ),
                 if (job.paymentStatus != 'unpaid')
-                  _DetailRow(icon: Icons.account_balance_wallet_outlined, label: "Payment", value: _paymentDetailLabel(job.paymentStatus)),
+                  _DetailRow(
+                    icon: Icons.account_balance_wallet_outlined,
+                    label: "Payment",
+                    value: _paymentDetailLabel(job.paymentStatus),
+                  ),
                 if (job.serviceFee != null)
-                  _DetailRow(icon: Icons.receipt_long_outlined, label: "Total Paid", value: "₱${job.totalCharged.toStringAsFixed(0)}"),
+                  _DetailRow(
+                    icon: Icons.receipt_long_outlined,
+                    label: "Total Paid",
+                    value: "₱${job.totalCharged.toStringAsFixed(0)}",
+                  ),
                 if (job.location.trim().isNotEmpty) ...[
                   const SizedBox(height: 6),
                   _WeatherCard(location: job.location),
@@ -799,12 +1164,26 @@ void showJobDetailsSheet(BuildContext context, Job job) {
                     children: [
                       Icon(Icons.star, size: 16, color: DashboardColors.accent),
                       const SizedBox(width: 6),
-                      Text("${job.rating}/5 rating", style: DashboardText.body(size: 13, weight: FontWeight.w600, color: Colors.black87)),
+                      Text(
+                        "${job.rating}/5 rating",
+                        style: DashboardText.body(
+                          size: 13,
+                          weight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
                     ],
                   ),
-                  if (job.ratingComment != null && job.ratingComment!.isNotEmpty) ...[
+                  if (job.ratingComment != null &&
+                      job.ratingComment!.isNotEmpty) ...[
                     const SizedBox(height: 6),
-                    Text('"${job.ratingComment}"', style: DashboardText.body(size: 13, color: DashboardColors.muted).copyWith(fontStyle: FontStyle.italic)),
+                    Text(
+                      '"${job.ratingComment}"',
+                      style: DashboardText.body(
+                        size: 13,
+                        color: DashboardColors.muted,
+                      ).copyWith(fontStyle: FontStyle.italic),
+                    ),
                   ],
                 ],
               ],
