@@ -19,9 +19,8 @@ class Job {
   final List<String>
   completionPhotos; // storage paths in the completion-photos bucket
   final DateTime? confirmedAt;
-  final DateTime? cancelledAt;
-  final DateTime? refundRequestedAt;
   final DateTime createdAt;
+  final DateTime updatedAt;
   final String? clientName;
   final String? workerName;
   final int? rating;
@@ -44,36 +43,25 @@ class Job {
     this.arrivalVerifiedAt,
     this.completionPhotos = const [],
     this.confirmedAt,
-    this.cancelledAt,
-    this.refundRequestedAt,
     required this.createdAt,
+    DateTime? updatedAt,
     this.clientName,
     this.workerName,
     this.rating,
     this.ratingComment,
     this.refundAdminMessage,
-  });
+  }) : updatedAt = updatedAt ?? createdAt;
 
   /// Labor fee + service fee — what the client actually pays at escrow time.
   double get totalCharged => (budget ?? 0) + (serviceFee ?? 0);
 
-  /// Most recent thing that happened to this job — whichever of its several
-  /// per-event timestamps is latest, falling back to when it was posted if
-  /// nothing else has happened yet. Used to sort "My Jobs" so a job whose
-  /// status just changed floats to the top instead of staying buried under
-  /// jobs that were merely *posted* more recently but haven't moved since.
-  DateTime get lastActivityAt {
-    var latest = createdAt;
-    for (final t in [
-      confirmedAt,
-      cancelledAt,
-      arrivalVerifiedAt,
-      refundRequestedAt,
-    ]) {
-      if (t != null && t.isAfter(latest)) latest = t;
-    }
-    return latest;
-  }
+  /// Most recent thing that happened to this job — bumped by a trigger on
+  /// every row update (accepted, arrived, paid, completed, cancelled...),
+  /// so it catches every transition uniformly instead of chasing each
+  /// status's own timestamp column. Used to sort "My Jobs" so a job that
+  /// just changed floats to the top instead of staying buried under jobs
+  /// merely *posted* more recently but untouched since.
+  DateTime get lastActivityAt => updatedAt;
 
   factory Job.fromMap(Map<String, dynamic> map) {
     return Job(
@@ -99,13 +87,12 @@ class Job {
       confirmedAt: map['confirmed_at'] != null
           ? DateTime.tryParse(map['confirmed_at'] as String)
           : null,
-      cancelledAt: map['cancelled_at'] != null
-          ? DateTime.tryParse(map['cancelled_at'] as String)
-          : null,
-      refundRequestedAt: map['refund_requested_at'] != null
-          ? DateTime.tryParse(map['refund_requested_at'] as String)
-          : null,
       createdAt: DateTime.parse(map['created_at'] as String),
+      // Falls back to createdAt (via the constructor) if the column isn't
+      // there yet — see supabase/schema.sql's jobs.updated_at trigger.
+      updatedAt: map['updated_at'] != null
+          ? DateTime.tryParse(map['updated_at'] as String)
+          : null,
       clientName: _fullName(map['client']),
       workerName: _fullName(map['worker']),
       rating: _rating(map['ratings'])?['rating'] as int?,

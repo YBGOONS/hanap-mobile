@@ -158,8 +158,28 @@ create table public.jobs (
   refund_requested_at timestamptz,
   refund_admin_message text, -- admin's note explaining their approve/deny decision
   paymongo_source_id text, -- links a PayMongo GCash Source back to this job for the webhook (see supabase/functions)
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now() -- bumped by the trigger below on every update, regardless of which column changed
 );
+
+-- My Jobs sorts by "most recent activity" — several transitions (accepted,
+-- arrived, in_progress) don't have their own dedicated timestamp column the
+-- way cancelled/confirmed/refund-requested do, so a single generic
+-- updated_at (bumped on ANY change) is the only way to catch all of them
+-- uniformly instead of chasing each one individually.
+create or replace function public.set_jobs_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+create trigger jobs_set_updated_at
+  before update on public.jobs
+  for each row execute function public.set_jobs_updated_at();
 
 alter table public.jobs enable row level security;
 grant select, insert, update, delete on public.jobs to authenticated;
