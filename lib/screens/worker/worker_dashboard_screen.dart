@@ -1505,7 +1505,8 @@ class _EarningsTabState extends State<_EarningsTab> {
         ((await supabase
                     .from('transactions')
                     .select(
-                      'type, amount, worker_amount, created_at, job:jobs(category, payment_status)',
+                      'type, amount, worker_amount, created_at, '
+                      'job:jobs(*, client:profiles!jobs_client_id_fkey(first_name,last_name), ratings(rating,comment))',
                     )
                     .eq('worker_id', userId)
                     .order('created_at', ascending: false))
@@ -1721,47 +1722,55 @@ class _PaymentHistoryItem extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: DashboardColors.border),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  job?['category'] as String? ?? '—',
-                  style: DashboardText.heading(
-                    size: 14,
-                    weight: FontWeight.w700,
-                    color: Colors.black87,
-                  ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: job == null
+            ? null
+            : () => showJobDetailsSheet(context, Job.fromMap(job)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      job?['category'] as String? ?? '—',
+                      style: DashboardText.heading(
+                        size: 14,
+                        weight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      "$dateLabel · $statusLabel",
+                      style: DashboardText.body(
+                        size: 12,
+                        color: DashboardColors.muted,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  "$dateLabel · $statusLabel",
-                  style: DashboardText.body(
-                    size: 12,
-                    color: DashboardColors.muted,
-                  ),
+              ),
+              Text(
+                "${isRefund ? '-' : (released ? '+' : '')}₱${amount.toStringAsFixed(0)}",
+                style: DashboardText.heading(
+                  size: 15,
+                  color: isRefund
+                      ? const Color(0xFFC62828)
+                      : DashboardColors.statusCompleted,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          Text(
-            "${isRefund ? '-' : (released ? '+' : '')}₱${amount.toStringAsFixed(0)}",
-            style: DashboardText.heading(
-              size: 15,
-              color: isRefund
-                  ? const Color(0xFFC62828)
-                  : DashboardColors.statusCompleted,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
