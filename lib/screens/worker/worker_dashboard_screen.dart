@@ -1789,6 +1789,15 @@ class _ProfileTabState extends State<_ProfileTab> {
   String? _skillsSuccess;
   String? _avatarUrlOverride;
 
+  final _currentPassCtrl = TextEditingController();
+  final _newPassCtrl = TextEditingController();
+  final _confirmPassCtrl = TextEditingController();
+  bool _changingPassword = false;
+  bool _showCurrentPass = false;
+  bool _showNewPass = false;
+  bool _showConfirmPass = false;
+  String? _passwordError;
+
   @override
   void initState() {
     super.initState();
@@ -1799,6 +1808,9 @@ class _ProfileTabState extends State<_ProfileTab> {
   void dispose() {
     _locationCtrl.dispose();
     _phoneCtrl.dispose();
+    _currentPassCtrl.dispose();
+    _newPassCtrl.dispose();
+    _confirmPassCtrl.dispose();
     super.dispose();
   }
 
@@ -1932,6 +1944,61 @@ class _ProfileTabState extends State<_ProfileTab> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _changePassword() async {
+    final current = _currentPassCtrl.text;
+    final newPass = _newPassCtrl.text;
+    final confirm = _confirmPassCtrl.text;
+    setState(() => _passwordError = null);
+
+    if (current.isEmpty) {
+      setState(() => _passwordError = "Enter your current password.");
+      return;
+    }
+    if (newPass.length < 6) {
+      setState(
+        () => _passwordError = "New password must be at least 6 characters.",
+      );
+      return;
+    }
+    if (newPass != confirm) {
+      setState(() => _passwordError = "New passwords don't match.");
+      return;
+    }
+
+    setState(() => _changingPassword = true);
+    try {
+      final email = supabase.auth.currentUser!.email!;
+      // Verify the current password is actually correct by re-authenticating
+      // with it before allowing the change — Supabase's updateUser() would
+      // otherwise happily change the password of an already-open session
+      // without ever checking the "current" one the user typed.
+      await supabase.auth.signInWithPassword(email: email, password: current);
+      await supabase.auth.updateUser(UserAttributes(password: newPass));
+      if (!mounted) return;
+      await supabase.auth.signOut();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        (route) => false,
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _changingPassword = false;
+        _passwordError =
+            e.message.toLowerCase().contains('invalid login credentials')
+            ? "Current password is incorrect."
+            : e.message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _changingPassword = false;
+        _passwordError = "Something went wrong. Please try again.";
+      });
     }
   }
 
@@ -2258,6 +2325,145 @@ class _ProfileTabState extends State<_ProfileTab> {
                               )
                             : Text(
                                 "Save Skills",
+                                style: DashboardText.body(
+                                  size: 13,
+                                  weight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: DashboardColors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Change Password",
+                      style: DashboardText.heading(
+                        size: 15,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _currentPassCtrl,
+                      obscureText: !_showCurrentPass,
+                      onChanged: (_) => setState(() => _passwordError = null),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                      decoration: dashboardInputDecoration(
+                        label: "Current Password",
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _showCurrentPass
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 18,
+                            color: DashboardColors.muted,
+                          ),
+                          onPressed: () => setState(
+                            () => _showCurrentPass = !_showCurrentPass,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _newPassCtrl,
+                      obscureText: !_showNewPass,
+                      onChanged: (_) => setState(() => _passwordError = null),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                      decoration: dashboardInputDecoration(
+                        label: "New Password",
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _showNewPass
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 18,
+                            color: DashboardColors.muted,
+                          ),
+                          onPressed: () =>
+                              setState(() => _showNewPass = !_showNewPass),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _confirmPassCtrl,
+                      obscureText: !_showConfirmPass,
+                      onChanged: (_) => setState(() => _passwordError = null),
+                      onSubmitted: (_) => _changePassword(),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                      decoration: dashboardInputDecoration(
+                        label: "Confirm New Password",
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _showConfirmPass
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 18,
+                            color: DashboardColors.muted,
+                          ),
+                          onPressed: () => setState(
+                            () => _showConfirmPass = !_showConfirmPass,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (_passwordError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        _passwordError!,
+                        style: DashboardText.body(
+                          size: 12,
+                          color: const Color(0xFFC62828),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 42,
+                      child: ElevatedButton(
+                        onPressed: _changingPassword ? null : _changePassword,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: DashboardColors.accent,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: _changingPassword
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                "Update Password",
                                 style: DashboardText.body(
                                   size: 13,
                                   weight: FontWeight.w700,
