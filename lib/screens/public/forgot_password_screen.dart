@@ -33,6 +33,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _confirmCtrl = TextEditingController();
   bool _loading = false;
   bool _resending = false;
+  bool _showPass = false;
+  bool _showConfirm = false;
   String? _error;
 
   @override
@@ -235,37 +237,57 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             style: AppText.body(
               size: 20,
               color: AppColors.textPrimary,
-            ).copyWith(letterSpacing: 6),
+            ).copyWith(letterSpacing: 4),
             textAlign: TextAlign.center,
             keyboardType: TextInputType.number,
-            maxLength: 6,
+            // Supabase's OTP length is a project-level setting, not
+            // guaranteed to be 6 — was hardcoded at 6 before, which
+            // silently truncated a longer code and made it impossible to
+            // ever enter the real one.
+            maxLength: 12,
             onChanged: (_) => setState(() => _error = null),
             decoration: hanapInputDecoration(
               label: "Code",
-              hint: "123456",
+              hint: "Enter the code from your email",
             ).copyWith(counterText: ""),
           ),
           const SizedBox(height: 14),
           TextField(
             controller: _passCtrl,
             style: AppText.body(size: 14, color: AppColors.textPrimary),
-            obscureText: true,
+            obscureText: !_showPass,
             onChanged: (_) => setState(() => _error = null),
             decoration: hanapInputDecoration(
               label: "New Password",
               hint: "••••••••",
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _showPass ? Icons.visibility_off : Icons.visibility,
+                  size: 18,
+                  color: AppColors.textSecondary,
+                ),
+                onPressed: () => setState(() => _showPass = !_showPass),
+              ),
             ),
           ),
           const SizedBox(height: 14),
           TextField(
             controller: _confirmCtrl,
             style: AppText.body(size: 14, color: AppColors.textPrimary),
-            obscureText: true,
+            obscureText: !_showConfirm,
             onChanged: (_) => setState(() => _error = null),
             onSubmitted: (_) => _resetPassword(),
             decoration: hanapInputDecoration(
               label: "Confirm New Password",
               hint: "••••••••",
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _showConfirm ? Icons.visibility_off : Icons.visibility,
+                  size: 18,
+                  color: AppColors.textSecondary,
+                ),
+                onPressed: () => setState(() => _showConfirm = !_showConfirm),
+              ),
             ),
           ),
           const SizedBox(height: 10),
