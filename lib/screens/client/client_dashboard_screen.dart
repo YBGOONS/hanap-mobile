@@ -1254,8 +1254,11 @@ class _WorkersTabState extends State<_WorkersTab> {
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                         itemCount: workers.length,
-                        itemBuilder: (context, i) =>
-                            _WorkerCard(worker: workers[i]),
+                        itemBuilder: (context, i) => _WorkerCard(
+                          worker: workers[i],
+                          onTap: () =>
+                              _showWorkerDetailsSheet(context, workers[i]),
+                        ),
                       ),
               ),
             ],
@@ -1268,7 +1271,8 @@ class _WorkersTabState extends State<_WorkersTab> {
 
 class _WorkerCard extends StatelessWidget {
   final Map<String, dynamic> worker;
-  const _WorkerCard({required this.worker});
+  final VoidCallback? onTap;
+  const _WorkerCard({required this.worker, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1283,44 +1287,217 @@ class _WorkerCard extends StatelessWidget {
     final available = worker['available'] as bool? ?? false;
     final skills = (worker['skills'] as List?)?.cast<String>() ?? const [];
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: DashboardColors.border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: DashboardColors.primary,
-            backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
-            child: avatarUrl == null
-                ? Text(
-                    initials,
-                    style: DashboardText.heading(size: 16, color: Colors.white),
-                  )
-                : null,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        name,
-                        style: DashboardText.heading(
-                          size: 15,
-                          color: Colors.black87,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: DashboardColors.border),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 24,
+              backgroundColor: DashboardColors.primary,
+              backgroundImage: avatarUrl != null
+                  ? NetworkImage(avatarUrl)
+                  : null,
+              child: avatarUrl == null
+                  ? Text(
+                      initials,
+                      style: DashboardText.heading(
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: DashboardText.heading(
+                            size: 15,
+                            color: Colors.black87,
+                          ),
                         ),
                       ),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: available
+                              ? DashboardColors.statusCompleted
+                              : DashboardColors.muted,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        available ? "Available" : "Unavailable",
+                        style: DashboardText.body(
+                          size: 11,
+                          weight: FontWeight.w600,
+                          color: available
+                              ? DashboardColors.statusCompleted
+                              : DashboardColors.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  _MetaText(icon: Icons.location_on_outlined, text: location),
+                  if (skills.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: skills
+                          .map(
+                            (s) => Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: DashboardColors.bg,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                s,
+                                style: DashboardText.body(
+                                  size: 11,
+                                  color: DashboardColors.muted,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
                     ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+void _showWorkerDetailsSheet(
+  BuildContext context,
+  Map<String, dynamic> worker,
+) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.white,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (context) => _WorkerDetailsSheet(worker: worker),
+  );
+}
+
+class _WorkerDetailsSheet extends StatefulWidget {
+  final Map<String, dynamic> worker;
+  const _WorkerDetailsSheet({required this.worker});
+
+  @override
+  State<_WorkerDetailsSheet> createState() => _WorkerDetailsSheetState();
+}
+
+class _WorkerDetailsSheetState extends State<_WorkerDetailsSheet> {
+  late final Future<List<Map<String, dynamic>>> _ratingsFuture = _loadRatings();
+
+  Future<List<Map<String, dynamic>>> _loadRatings() async {
+    final rows = await supabase
+        .from('ratings')
+        .select('rating, comment, created_at, job:jobs(category)')
+        .eq('worker_id', widget.worker['id'] as String)
+        .order('created_at', ascending: false);
+    return (rows as List).cast<Map<String, dynamic>>();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final worker = widget.worker;
+    final firstName = worker['first_name'] as String? ?? '';
+    final lastName = worker['last_name'] as String? ?? '';
+    final name = "$firstName $lastName".trim();
+    final initials =
+        "${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}"
+            .toUpperCase();
+    final avatarUrl = worker['avatar_url'] as String?;
+    final location = worker['location'] as String? ?? '—';
+    final available = worker['available'] as bool? ?? false;
+    final skills = (worker['skills'] as List?)?.cast<String>() ?? const [];
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        return SingleChildScrollView(
+          controller: scrollController,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: DashboardColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Center(
+                child: CircleAvatar(
+                  radius: 40,
+                  backgroundColor: DashboardColors.primary,
+                  backgroundImage: avatarUrl != null
+                      ? NetworkImage(avatarUrl)
+                      : null,
+                  child: avatarUrl == null
+                      ? Text(
+                          initials,
+                          style: DashboardText.heading(
+                            size: 24,
+                            color: Colors.white,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Center(
+                child: Text(
+                  name,
+                  style: DashboardText.heading(size: 19, color: Colors.black87),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                     Container(
                       width: 8,
                       height: 8,
@@ -1331,11 +1508,11 @@ class _WorkerCard extends StatelessWidget {
                         shape: BoxShape.circle,
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 5),
                     Text(
                       available ? "Available" : "Unavailable",
                       style: DashboardText.body(
-                        size: 11,
+                        size: 12,
                         weight: FontWeight.w600,
                         color: available
                             ? DashboardColors.statusCompleted
@@ -1344,39 +1521,211 @@ class _WorkerCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 3),
-                _MetaText(icon: Icons.location_on_outlined, text: location),
-                if (skills.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: skills
-                        .map(
-                          (s) => Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: DashboardColors.bg,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              s,
-                              style: DashboardText.body(
-                                size: 11,
-                                color: DashboardColors.muted,
-                              ),
+              ),
+              const SizedBox(height: 4),
+              Center(
+                child: Text(
+                  "Worker · Member since ${_formatMemberSince(worker['created_at'] as String?)}",
+                  style: DashboardText.body(
+                    size: 11.5,
+                    color: DashboardColors.muted,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              _MetaText(icon: Icons.location_on_outlined, text: location),
+              if (skills.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  "Skills",
+                  style: DashboardText.heading(size: 13, color: Colors.black87),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: skills
+                      .map(
+                        (s) => Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: DashboardColors.bg,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            s,
+                            style: DashboardText.body(
+                              size: 12,
+                              color: DashboardColors.muted,
                             ),
                           ),
-                        )
-                        .toList(),
-                  ),
-                ],
+                        ),
+                      )
+                      .toList(),
+                ),
               ],
-            ),
+              const SizedBox(height: 20),
+              const Divider(height: 1, color: DashboardColors.border),
+              const SizedBox(height: 20),
+              Text(
+                "Ratings & Reviews",
+                style: DashboardText.heading(size: 15, color: Colors.black87),
+              ),
+              const SizedBox(height: 12),
+              FutureBuilder<List<Map<String, dynamic>>>(
+                future: _ratingsFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: CircularProgressIndicator(
+                          color: DashboardColors.primary,
+                        ),
+                      ),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return Text(
+                      "Couldn't load ratings.",
+                      style: DashboardText.body(
+                        size: 13,
+                        color: DashboardColors.muted,
+                      ),
+                    );
+                  }
+                  final ratings = snapshot.data ?? [];
+                  if (ratings.isEmpty) {
+                    return Text(
+                      "No ratings yet.",
+                      style: DashboardText.body(
+                        size: 13,
+                        color: DashboardColors.muted,
+                      ),
+                    );
+                  }
+                  final avg =
+                      ratings
+                          .map((r) => r['rating'] as int)
+                          .reduce((a, b) => a + b) /
+                      ratings.length;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.star,
+                            size: 20,
+                            color: DashboardColors.accent,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            avg.toStringAsFixed(1),
+                            style: DashboardText.heading(
+                              size: 16,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            "(${ratings.length} review${ratings.length == 1 ? '' : 's'})",
+                            style: DashboardText.body(
+                              size: 12,
+                              color: DashboardColors.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      for (final r in ratings) _ReviewTile(rating: r),
+                    ],
+                  );
+                },
+              ),
+            ],
           ),
+        );
+      },
+    );
+  }
+}
+
+class _ReviewTile extends StatelessWidget {
+  final Map<String, dynamic> rating;
+  const _ReviewTile({required this.rating});
+
+  @override
+  Widget build(BuildContext context) {
+    final stars = rating['rating'] as int;
+    final comment = rating['comment'] as String?;
+    final category =
+        (rating['job'] as Map<String, dynamic>?)?['category'] as String?;
+    final createdAt = rating['created_at'] != null
+        ? DateTime.tryParse(rating['created_at'] as String)
+        : null;
+    final dateLabel = createdAt == null
+        ? ''
+        : "${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}";
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: DashboardColors.bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Row(
+                children: List.generate(
+                  5,
+                  (i) => Icon(
+                    i < stars ? Icons.star : Icons.star_border,
+                    size: 14,
+                    color: DashboardColors.accent,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (category != null)
+                Text(
+                  category,
+                  style: DashboardText.body(
+                    size: 11,
+                    weight: FontWeight.w600,
+                    color: DashboardColors.muted,
+                  ),
+                ),
+            ],
+          ),
+          if (comment != null && comment.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              comment,
+              style: DashboardText.body(
+                size: 13,
+                color: Colors.black87,
+              ).copyWith(height: 1.4),
+            ),
+          ],
+          if (dateLabel.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              dateLabel,
+              style: DashboardText.body(
+                size: 10.5,
+                color: DashboardColors.muted,
+              ),
+            ),
+          ],
         ],
       ),
     );
