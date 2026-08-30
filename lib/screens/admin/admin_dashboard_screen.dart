@@ -3095,6 +3095,8 @@ class _SettingsTabState extends State<_SettingsTab> {
   final _phoneCtrl = TextEditingController();
   bool _saving = false;
   bool _savingPhone = false;
+  bool _showNewPass = false;
+  bool _showConfirmPass = false;
   String? _error;
   String? _success;
   String? _phoneError;
@@ -3383,7 +3385,7 @@ class _SettingsTabState extends State<_SettingsTab> {
                           const SizedBox(height: 14),
                           TextField(
                             controller: _newPassCtrl,
-                            obscureText: true,
+                            obscureText: !_showNewPass,
                             style: DashboardText.body(
                               size: 14,
                               color: Colors.black87,
@@ -3391,12 +3393,24 @@ class _SettingsTabState extends State<_SettingsTab> {
                             decoration: dashboardInputDecoration(
                               label: "New Password",
                               hint: "••••••••",
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _showNewPass
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  size: 18,
+                                  color: DashboardColors.muted,
+                                ),
+                                onPressed: () => setState(
+                                  () => _showNewPass = !_showNewPass,
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(height: 14),
                           TextField(
                             controller: _confirmPassCtrl,
-                            obscureText: true,
+                            obscureText: !_showConfirmPass,
                             style: DashboardText.body(
                               size: 14,
                               color: Colors.black87,
@@ -3405,6 +3419,18 @@ class _SettingsTabState extends State<_SettingsTab> {
                             decoration: dashboardInputDecoration(
                               label: "Confirm Password",
                               hint: "••••••••",
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _showConfirmPass
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  size: 18,
+                                  color: DashboardColors.muted,
+                                ),
+                                onPressed: () => setState(
+                                  () => _showConfirmPass = !_showConfirmPass,
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(height: 14),

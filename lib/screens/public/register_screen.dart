@@ -40,6 +40,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _error;
   bool _loading = false;
   bool _emailSent = false;
+  bool _showPass = false;
 
   @override
   void dispose() {
@@ -61,14 +62,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (RegExp(r'[A-Z]').hasMatch(pw)) score++;
     if (RegExp(r'[0-9]').hasMatch(pw)) score++;
     if (RegExp(r'[^A-Za-z0-9]').hasMatch(pw)) score++;
-    if (score <= 1) return (label: "Weak", color: const Color(0xFFEF4444), pct: 0.25);
-    if (score == 2) return (label: "Fair", color: const Color(0xFFF97316), pct: 0.50);
-    if (score == 3) return (label: "Strong", color: const Color(0xFFEAB308), pct: 0.75);
+    if (score <= 1) {
+      return (label: "Weak", color: const Color(0xFFEF4444), pct: 0.25);
+    }
+    if (score == 2) {
+      return (label: "Fair", color: const Color(0xFFF97316), pct: 0.50);
+    }
+    if (score == 3) {
+      return (label: "Strong", color: const Color(0xFFEAB308), pct: 0.75);
+    }
     return (label: "Very Strong", color: AppColors.live, pct: 1.0);
   }
 
   Future<void> _handleSubmit() async {
-    if (_firstNameCtrl.text.trim().isEmpty || _lastNameCtrl.text.trim().isEmpty) {
+    if (_firstNameCtrl.text.trim().isEmpty ||
+        _lastNameCtrl.text.trim().isEmpty) {
       setState(() => _error = "First and last name are required.");
       return;
     }
@@ -116,7 +124,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         setState(() => _loading = false);
         if (_role == _Role.worker) {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => NbiUploadScreen(userId: res.user!.id)),
+            MaterialPageRoute(
+              builder: (_) => NbiUploadScreen(userId: res.user!.id),
+            ),
           );
         } else {
           Navigator.of(context).pop();
@@ -165,7 +175,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           // Role toggle — Client / Worker
           Row(
             children: [
-              Expanded(child: _roleButton(_Role.client, "Client", Icons.person)),
+              Expanded(
+                child: _roleButton(_Role.client, "Client", Icons.person),
+              ),
               const SizedBox(width: 10),
               Expanded(child: _roleButton(_Role.worker, "Worker", Icons.build)),
             ],
@@ -179,7 +191,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   controller: _firstNameCtrl,
                   style: AppText.body(size: 14, color: AppColors.textPrimary),
                   onChanged: (_) => setState(() => _error = null),
-                  decoration: hanapInputDecoration(label: "First Name", hint: "Juan"),
+                  decoration: hanapInputDecoration(
+                    label: "First Name",
+                    hint: "Juan",
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -188,7 +203,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   controller: _lastNameCtrl,
                   style: AppText.body(size: 14, color: AppColors.textPrimary),
                   onChanged: (_) => setState(() => _error = null),
-                  decoration: hanapInputDecoration(label: "Last Name", hint: "dela Cruz"),
+                  decoration: hanapInputDecoration(
+                    label: "Last Name",
+                    hint: "dela Cruz",
+                  ),
                 ),
               ),
             ],
@@ -200,7 +218,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             style: AppText.body(size: 14, color: AppColors.textPrimary),
             keyboardType: TextInputType.emailAddress,
             onChanged: (_) => setState(() => _error = null),
-            decoration: hanapInputDecoration(label: "Email", hint: "you@email.com"),
+            decoration: hanapInputDecoration(
+              label: "Email",
+              hint: "you@email.com",
+            ),
           ),
           const SizedBox(height: 14),
 
@@ -208,7 +229,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             controller: _locationCtrl,
             style: AppText.body(size: 14, color: AppColors.textPrimary),
             onChanged: (_) => setState(() => _error = null),
-            decoration: hanapInputDecoration(label: "Location", hint: "City, Province"),
+            decoration: hanapInputDecoration(
+              label: "Location",
+              hint: "City, Province",
+            ),
           ),
           const SizedBox(height: 14),
 
@@ -218,7 +242,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             keyboardType: TextInputType.phone,
             inputFormatters: [PhPhoneInputFormatter()],
             onChanged: (_) => setState(() => _error = null),
-            decoration: hanapInputDecoration(label: "Phone Number", hint: "09XX XXX XXXX"),
+            decoration: hanapInputDecoration(
+              label: "Phone Number",
+              hint: "09XX XXX XXXX",
+            ),
           ),
           const SizedBox(height: 14),
 
@@ -230,7 +257,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
               style: AppText.body(size: 14, color: AppColors.textPrimary),
               decoration: hanapInputDecoration(label: "Primary Skill"),
               items: kCategories
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c, style: AppText.body(size: 14, color: AppColors.textPrimary))))
+                  .map(
+                    (c) => DropdownMenuItem(
+                      value: c,
+                      child: Text(
+                        c,
+                        style: AppText.body(
+                          size: 14,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  )
                   .toList(),
               onChanged: (v) => setState(() => _skill = v ?? _skill),
             ),
@@ -240,9 +278,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
           TextField(
             controller: _passCtrl,
             style: AppText.body(size: 14, color: AppColors.textPrimary),
-            obscureText: true,
+            obscureText: !_showPass,
             onChanged: (_) => setState(() {}),
-            decoration: hanapInputDecoration(label: "Password", hint: "••••••••"),
+            decoration: hanapInputDecoration(
+              label: "Password",
+              hint: "••••••••",
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _showPass ? Icons.visibility_off : Icons.visibility,
+                  size: 18,
+                  color: AppColors.textSecondary,
+                ),
+                onPressed: () => setState(() => _showPass = !_showPass),
+              ),
+            ),
           ),
           if (_passwordStrength != null) ...[
             const SizedBox(height: 8),
@@ -265,7 +314,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
             const SizedBox(height: 5),
             Text(
               _passwordStrength!.label,
-              style: AppText.body(size: 11, weight: FontWeight.w700, color: _passwordStrength!.color),
+              style: AppText.body(
+                size: 11,
+                weight: FontWeight.w700,
+                color: _passwordStrength!.color,
+              ),
             ),
           ],
           const SizedBox(height: 14),
@@ -280,7 +333,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
               child: Text(
                 "After you confirm your email and log in, we'll ask you to upload your NBI Clearance before an admin reviews your account.",
-                style: AppText.body(size: 12, color: AppColors.gold).copyWith(height: 1.5),
+                style: AppText.body(
+                  size: 12,
+                  color: AppColors.gold,
+                ).copyWith(height: 1.5),
               ),
             ),
             const SizedBox(height: 14),
@@ -304,7 +360,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const TextSpan(text: "Already have an account? "),
                   TextSpan(
                     text: "Log in here",
-                    style: AppText.body(size: 13, weight: FontWeight.w600, color: AppColors.gold),
+                    style: AppText.body(
+                      size: 13,
+                      weight: FontWeight.w600,
+                      color: AppColors.gold,
+                    ),
                     recognizer: TapGestureRecognizer()
                       ..onTap = () {
                         Navigator.of(context).pop();
@@ -327,15 +387,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _role = role;
         _error = null;
       }),
-      icon: Icon(icon, size: 16, color: selected ? Colors.black : AppColors.textPrimary),
+      icon: Icon(
+        icon,
+        size: 16,
+        color: selected ? Colors.black : AppColors.textPrimary,
+      ),
       label: Text(
         label,
-        style: AppText.heading(size: 13, color: selected ? Colors.black : AppColors.textPrimary),
+        style: AppText.heading(
+          size: 13,
+          color: selected ? Colors.black : AppColors.textPrimary,
+        ),
       ),
       style: OutlinedButton.styleFrom(
         backgroundColor: selected ? AppColors.gold : Colors.transparent,
         padding: const EdgeInsets.symmetric(vertical: 13),
-        side: BorderSide(color: selected ? AppColors.gold : AppColors.hairline, width: selected ? 0 : 1.5),
+        side: BorderSide(
+          color: selected ? AppColors.gold : AppColors.hairline,
+          width: selected ? 0 : 1.5,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
@@ -349,17 +419,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
           Container(
             width: 72,
             height: 72,
-            decoration: BoxDecoration(color: AppColors.goldBg, shape: BoxShape.circle, border: Border.all(color: AppColors.goldBorder)),
+            decoration: BoxDecoration(
+              color: AppColors.goldBg,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.goldBorder),
+            ),
             alignment: Alignment.center,
             child: const Text("📧", style: TextStyle(fontSize: 32)),
           ),
           const SizedBox(height: 20),
-          Text("Check your email", style: AppText.heading(size: 20), textAlign: TextAlign.center),
+          Text(
+            "Check your email",
+            style: AppText.heading(size: 20),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 10),
           Text(
             "We sent a confirmation link to ${_emailCtrl.text.trim()}. Click it, then come back and log in.",
             textAlign: TextAlign.center,
-            style: AppText.body(size: 14, color: AppColors.textSecondary).copyWith(height: 1.5),
+            style: AppText.body(
+              size: 14,
+              color: AppColors.textSecondary,
+            ).copyWith(height: 1.5),
           ),
           const SizedBox(height: 24),
           GoldButton(

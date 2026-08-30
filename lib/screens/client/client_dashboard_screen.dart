@@ -1446,6 +1446,9 @@ class _ProfileTabState extends State<_ProfileTab> {
   final _newPassCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
   bool _changingPassword = false;
+  bool _showCurrentPass = false;
+  bool _showNewPass = false;
+  bool _showConfirmPass = false;
   String? _passwordError;
 
   @override
@@ -1976,7 +1979,7 @@ class _ProfileTabState extends State<_ProfileTab> {
                     const SizedBox(height: 14),
                     TextField(
                       controller: _currentPassCtrl,
-                      obscureText: true,
+                      obscureText: !_showCurrentPass,
                       onChanged: (_) => setState(() => _passwordError = null),
                       style: DashboardText.body(
                         size: 14,
@@ -1984,12 +1987,24 @@ class _ProfileTabState extends State<_ProfileTab> {
                       ),
                       decoration: dashboardInputDecoration(
                         label: "Current Password",
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _showCurrentPass
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 18,
+                            color: DashboardColors.muted,
+                          ),
+                          onPressed: () => setState(
+                            () => _showCurrentPass = !_showCurrentPass,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
                     TextField(
                       controller: _newPassCtrl,
-                      obscureText: true,
+                      obscureText: !_showNewPass,
                       onChanged: (_) => setState(() => _passwordError = null),
                       style: DashboardText.body(
                         size: 14,
@@ -1997,12 +2012,23 @@ class _ProfileTabState extends State<_ProfileTab> {
                       ),
                       decoration: dashboardInputDecoration(
                         label: "New Password",
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _showNewPass
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 18,
+                            color: DashboardColors.muted,
+                          ),
+                          onPressed: () =>
+                              setState(() => _showNewPass = !_showNewPass),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
                     TextField(
                       controller: _confirmPassCtrl,
-                      obscureText: true,
+                      obscureText: !_showConfirmPass,
                       onChanged: (_) => setState(() => _passwordError = null),
                       onSubmitted: (_) => _changePassword(),
                       style: DashboardText.body(
@@ -2011,6 +2037,18 @@ class _ProfileTabState extends State<_ProfileTab> {
                       ),
                       decoration: dashboardInputDecoration(
                         label: "Confirm New Password",
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _showConfirmPass
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                            size: 18,
+                            color: DashboardColors.muted,
+                          ),
+                          onPressed: () => setState(
+                            () => _showConfirmPass = !_showConfirmPass,
+                          ),
+                        ),
                       ),
                     ),
                     if (_passwordError != null) ...[
