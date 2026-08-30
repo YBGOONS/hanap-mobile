@@ -3093,6 +3093,7 @@ class _SettingsTabState extends State<_SettingsTab> {
   final _newPassCtrl = TextEditingController();
   final _confirmPassCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
   bool _saving = false;
   bool _savingPhone = false;
   bool _showNewPass = false;
@@ -3101,6 +3102,9 @@ class _SettingsTabState extends State<_SettingsTab> {
   String? _success;
   String? _phoneError;
   String? _phoneSuccess;
+  // Null = legacy account, still editable. Non-null (from the server, or
+  // right after this session sets it) = locked, field renders read-only.
+  String? _originalUsername;
 
   @override
   void initState() {
@@ -3113,6 +3117,7 @@ class _SettingsTabState extends State<_SettingsTab> {
     _newPassCtrl.dispose();
     _confirmPassCtrl.dispose();
     _phoneCtrl.dispose();
+    _usernameCtrl.dispose();
     super.dispose();
   }
 
@@ -3124,6 +3129,8 @@ class _SettingsTabState extends State<_SettingsTab> {
         .eq('id', userId)
         .single();
     _phoneCtrl.text = row['phone'] as String? ?? '';
+    _usernameCtrl.text = row['username'] as String? ?? '';
+    _originalUsername = row['username'] as String?;
     return row;
   }
 
@@ -3133,6 +3140,18 @@ class _SettingsTabState extends State<_SettingsTab> {
       setState(() => _phoneError = phPhoneErrorMessage);
       return;
     }
+    // Once a username is set (server-side or by this save flow already),
+    // the field is locked and this save must never touch it again.
+    final usernameLocked = _originalUsername != null;
+    final username = _usernameCtrl.text.trim().toLowerCase();
+    final settingUsername = !usernameLocked && username.isNotEmpty;
+    if (settingUsername && !RegExp(r'^[a-z0-9_]{3,20}$').hasMatch(username)) {
+      setState(
+        () => _phoneError =
+            "Username must be 3-20 characters: lowercase letters, numbers, underscore only.",
+      );
+      return;
+    }
     setState(() {
       _savingPhone = true;
       _phoneError = null;
@@ -3140,17 +3159,24 @@ class _SettingsTabState extends State<_SettingsTab> {
     });
     try {
       final userId = supabase.auth.currentUser!.id;
-      await supabase.from('profiles').update({'phone': phone}).eq('id', userId);
+      final update = {
+        'phone': phone,
+        if (settingUsername) 'username': username,
+      };
+      await supabase.from('profiles').update(update).eq('id', userId);
       if (!mounted) return;
       setState(() {
         _savingPhone = false;
-        _phoneSuccess = "Phone number updated.";
+        _phoneSuccess = "Profile updated.";
+        if (settingUsername) _originalUsername = username;
       });
     } on PostgrestException catch (e) {
       if (!mounted) return;
       setState(() {
         _savingPhone = false;
-        _phoneError = e.message;
+        _phoneError = e.code == '23505'
+            ? "Username is already taken."
+            : e.message;
       });
     }
   }
@@ -3278,7 +3304,7 @@ class _SettingsTabState extends State<_SettingsTab> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            "Phone Number",
+                            "Profile Info",
                             style: DashboardText.heading(
                               size: 15,
                               color: Colors.black87,
@@ -3286,12 +3312,41 @@ class _SettingsTabState extends State<_SettingsTab> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            "Used for GCash payment verification.",
+                            "Phone is used for GCash payment verification.",
                             style: DashboardText.body(
                               size: 12,
                               color: DashboardColors.muted,
                             ),
                           ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            enabled: _originalUsername == null,
+                            controller: _usernameCtrl,
+                            onChanged: (_) => setState(() {
+                              _phoneError = null;
+                              _phoneSuccess = null;
+                            }),
+                            style: DashboardText.body(
+                              size: 14,
+                              color: Colors.black87,
+                            ),
+                            decoration: dashboardInputDecoration(
+                              label: "Username",
+                              hint: _originalUsername == null
+                                  ? "lowercase, numbers, underscore only"
+                                  : null,
+                            ),
+                          ),
+                          if (_originalUsername == null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              "You can set this once — choose carefully, it can't be changed later.",
+                              style: DashboardText.body(
+                                size: 11,
+                                color: DashboardColors.muted,
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 14),
                           TextField(
                             controller: _phoneCtrl,

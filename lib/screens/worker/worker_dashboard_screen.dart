@@ -1780,6 +1780,7 @@ class _ProfileTabState extends State<_ProfileTab> {
   late Future<Map<String, dynamic>> _profileFuture;
   final _locationCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
   Set<String> _selectedSkills = {};
   bool _uploadingAvatar = false;
   bool _savingLocation = false;
@@ -1788,6 +1789,9 @@ class _ProfileTabState extends State<_ProfileTab> {
   String? _locationSuccess;
   String? _skillsSuccess;
   String? _avatarUrlOverride;
+  // Null = legacy account, still editable. Non-null (from the server, or
+  // right after this session sets it) = locked, field renders read-only.
+  String? _originalUsername;
 
   final _currentPassCtrl = TextEditingController();
   final _newPassCtrl = TextEditingController();
@@ -1808,6 +1812,7 @@ class _ProfileTabState extends State<_ProfileTab> {
   void dispose() {
     _locationCtrl.dispose();
     _phoneCtrl.dispose();
+    _usernameCtrl.dispose();
     _currentPassCtrl.dispose();
     _newPassCtrl.dispose();
     _confirmPassCtrl.dispose();
@@ -1823,6 +1828,8 @@ class _ProfileTabState extends State<_ProfileTab> {
         .single();
     _locationCtrl.text = row['location'] as String? ?? '';
     _phoneCtrl.text = row['phone'] as String? ?? '';
+    _usernameCtrl.text = row['username'] as String? ?? '';
+    _originalUsername = row['username'] as String?;
     _selectedSkills = ((row['skills'] as List?)?.cast<String>() ?? const [])
         .toSet();
     return row;
@@ -1891,6 +1898,18 @@ class _ProfileTabState extends State<_ProfileTab> {
       setState(() => _locationError = phPhoneErrorMessage);
       return;
     }
+    // Once a username is set (server-side or by this save flow already),
+    // the field is locked and this save must never touch it again.
+    final usernameLocked = _originalUsername != null;
+    final username = _usernameCtrl.text.trim().toLowerCase();
+    final settingUsername = !usernameLocked && username.isNotEmpty;
+    if (settingUsername && !RegExp(r'^[a-z0-9_]{3,20}$').hasMatch(username)) {
+      setState(
+        () => _locationError =
+            "Username must be 3-20 characters: lowercase letters, numbers, underscore only.",
+      );
+      return;
+    }
     setState(() {
       _savingLocation = true;
       _locationError = null;
@@ -1898,20 +1917,25 @@ class _ProfileTabState extends State<_ProfileTab> {
     });
     try {
       final userId = supabase.auth.currentUser!.id;
-      await supabase
-          .from('profiles')
-          .update({'location': location, 'phone': phone})
-          .eq('id', userId);
+      final update = {
+        'location': location,
+        'phone': phone,
+        if (settingUsername) 'username': username,
+      };
+      await supabase.from('profiles').update(update).eq('id', userId);
       if (!mounted) return;
       setState(() {
         _savingLocation = false;
         _locationSuccess = "Profile updated.";
+        if (settingUsername) _originalUsername = username;
       });
     } on PostgrestException catch (e) {
       if (!mounted) return;
       setState(() {
         _savingLocation = false;
-        _locationError = e.message;
+        _locationError = e.code == '23505'
+            ? "Username is already taken."
+            : e.message;
       });
     }
   }
@@ -2134,7 +2158,7 @@ class _ProfileTabState extends State<_ProfileTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "Location & Phone",
+                      "Profile Info",
                       style: DashboardText.body(
                         size: 12,
                         weight: FontWeight.w700,
@@ -2142,6 +2166,35 @@ class _ProfileTabState extends State<_ProfileTab> {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    TextField(
+                      enabled: _originalUsername == null,
+                      controller: _usernameCtrl,
+                      onChanged: (_) => setState(() {
+                        _locationError = null;
+                        _locationSuccess = null;
+                      }),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                      decoration: dashboardInputDecoration(
+                        label: "Username",
+                        hint: _originalUsername == null
+                            ? "lowercase, numbers, underscore only"
+                            : null,
+                      ),
+                    ),
+                    if (_originalUsername == null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        "You can set this once — choose carefully, it can't be changed later.",
+                        style: DashboardText.body(
+                          size: 11,
+                          color: DashboardColors.muted,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
                     TextField(
                       controller: _locationCtrl,
                       onChanged: (_) => setState(() {

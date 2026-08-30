@@ -32,6 +32,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   _Role _role = _Role.client;
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
@@ -46,6 +47,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void dispose() {
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
+    _usernameCtrl.dispose();
     _emailCtrl.dispose();
     _locationCtrl.dispose();
     _phoneCtrl.dispose();
@@ -80,6 +82,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
       setState(() => _error = "First and last name are required.");
       return;
     }
+    final username = _usernameCtrl.text.trim().toLowerCase();
+    if (username.isEmpty) {
+      setState(() => _error = "Username is required.");
+      return;
+    }
+    if (!RegExp(r'^[a-z0-9_]{3,20}$').hasMatch(username)) {
+      setState(
+        () => _error =
+            "Username must be 3-20 characters: lowercase letters, numbers, underscore only.",
+      );
+      return;
+    }
     if (_emailCtrl.text.trim().isEmpty) {
       setState(() => _error = "Email is required.");
       return;
@@ -103,6 +117,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
+      // Checked up front so a taken username shows a clean message here
+      // instead of surfacing as GoTrue's generic "Database error saving new
+      // user" when the unique constraint rejects it inside the signup
+      // trigger. The constraint itself is still the real (race-safe) guard.
+      final available = await supabase.rpc(
+        'username_available',
+        params: {'p_username': username},
+      );
+      if (available != true) {
+        setState(() {
+          _loading = false;
+          _error = "That username is already taken.";
+        });
+        return;
+      }
+
       final res = await supabase.auth.signUp(
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text.trim(),
@@ -110,6 +140,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'role': _role == _Role.worker ? 'worker' : 'client',
           'first_name': _firstNameCtrl.text.trim(),
           'last_name': _lastNameCtrl.text.trim(),
+          'username': username,
           'location': _locationCtrl.text.trim(),
           'phone': _phoneCtrl.text.trim(),
           if (_role == _Role.worker) 'skills': [_skill],
@@ -140,9 +171,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
       });
     } on AuthException catch (e) {
       if (!mounted) return;
+      // A username taken in the split second between the availability check
+      // above and the actual signup fails inside handle_new_user's trigger —
+      // GoTrue surfaces that as a generic "Database error saving new user"
+      // rather than anything mentioning the username column specifically.
+      final dbTriggerFailure = e.message.toLowerCase().contains(
+        'database error',
+      );
       setState(() {
         _loading = false;
-        _error = e.message;
+        _error = dbTriggerFailure
+            ? "That username is already taken."
+            : e.message;
       });
     } catch (e) {
       if (!mounted) return;
@@ -210,6 +250,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 14),
+
+          TextField(
+            controller: _usernameCtrl,
+            style: AppText.body(size: 14, color: AppColors.textPrimary),
+            onChanged: (_) => setState(() => _error = null),
+            decoration: hanapInputDecoration(
+              label: "Username",
+              hint: "lowercase, numbers, underscore only",
+            ),
           ),
           const SizedBox(height: 14),
 

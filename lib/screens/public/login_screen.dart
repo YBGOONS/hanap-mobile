@@ -52,15 +52,17 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-    final email = _emailCtrl.text.trim();
+    final identifier = _emailCtrl.text.trim();
     final pass = _passCtrl.text.trim();
 
-    if (email.isEmpty && pass.isEmpty) {
-      setState(() => _error = "Please fill in your email and password.");
+    if (identifier.isEmpty && pass.isEmpty) {
+      setState(
+        () => _error = "Please fill in your email/username and password.",
+      );
       return;
     }
-    if (email.isEmpty) {
-      setState(() => _error = "Email is required.");
+    if (identifier.isEmpty) {
+      setState(() => _error = "Email or username is required.");
       return;
     }
     if (pass.isEmpty) {
@@ -75,6 +77,22 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      // Not an email → treat it as a username and resolve the real email
+      // first (signInWithPassword only takes an email). Same generic
+      // "Login failed" message either way below so a wrong username can't
+      // be used to probe which ones exist.
+      var email = identifier;
+      if (!identifier.contains('@')) {
+        final resolved = await supabase.rpc(
+          'email_for_username',
+          params: {'p_username': identifier},
+        );
+        if (resolved == null || (resolved as String).isEmpty) {
+          throw const AuthException('Invalid login credentials');
+        }
+        email = resolved;
+      }
+
       final res = await supabase.auth.signInWithPassword(
         email: email,
         password: pass,
@@ -228,8 +246,8 @@ class _LoginScreenState extends State<LoginScreen> {
               _showResend = false;
             }),
             decoration: hanapInputDecoration(
-              label: "Email",
-              hint: "you@email.com",
+              label: "Email or Username",
+              hint: "you@email.com or username",
               hasError: hasEmailError,
             ),
           ),

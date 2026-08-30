@@ -20,6 +20,12 @@ create table public.profiles (
   skills text[], -- workers can have more than one; register screen writes a single-element array for now
   available boolean not null default true, -- worker's "open for jobs" toggle
   avatar_url text,
+  -- Required at signup going forward; nullable only because existing accounts
+  -- from before this feature don't have one yet — they set it once from
+  -- Profile settings, then protect_profile_fields_trigger below locks it for
+  -- good. Always stored lowercase (register screen / profile settings both
+  -- normalize before sending).
+  username text unique,
   nbi_clearance_path text,
   status text not null default 'active' check (status in ('pending', 'active', 'rejected', 'suspended')),
   created_at timestamptz not null default now()
@@ -44,7 +50,7 @@ language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.profiles (id, role, first_name, last_name, email, location, phone, skills, status)
+  insert into public.profiles (id, role, first_name, last_name, email, location, phone, skills, status, username)
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'role', 'client'),
@@ -58,7 +64,8 @@ begin
         array(select jsonb_array_elements_text(new.raw_user_meta_data -> 'skills'))
       else null
     end,
-    case when new.raw_user_meta_data ->> 'role' = 'worker' then 'pending' else 'active' end
+    case when new.raw_user_meta_data ->> 'role' = 'worker' then 'pending' else 'active' end,
+    new.raw_user_meta_data ->> 'username'
   );
   return new;
 end;
@@ -93,6 +100,13 @@ begin
       new.status := old.status;
     end if;
   end if;
+  -- Username is a one-time set: once it's non-null, it can never change
+  -- again by any path (including the SQL Editor / an admin) — silently
+  -- reverts the same way role/status do above, rather than raising, to
+  -- match this function's existing style.
+  if old.username is not null and new.username is distinct from old.username then
+    new.username := old.username;
+  end if;
   return new;
 end;
 $$;
@@ -123,6 +137,34 @@ create policy "profiles_admin_updates_any"
   to authenticated
   using (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'))
   with check (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'));
+
+-- Login accepts either an email or a username, but signInWithPassword only
+-- takes an email — this resolves a username to its email first. Has to be
+-- its own security definer RPC (not a plain profiles query) because the
+-- caller isn't authenticated yet at login time; profiles_select_authenticated
+-- above only covers logged-in callers. Postgres grants EXECUTE on new
+-- functions to PUBLIC by default, so no explicit grant is needed for the
+-- anon key to call this from the login screen.
+create or replace function public.email_for_username(p_username text)
+returns text
+language sql
+security definer set search_path = public
+as $$
+  select email from public.profiles where username = lower(trim(p_username));
+$$;
+
+-- Lets the register screen check availability *before* calling signUp() —
+-- a duplicate username failing inside handle_new_user's trigger instead
+-- would surface as a generic "Database error saving new user" from GoTrue,
+-- not a friendly message. The unique constraint on profiles.username is
+-- still the real (race-safe) guarantee; this is just for UX.
+create or replace function public.username_available(p_username text)
+returns boolean
+language sql
+security definer set search_path = public
+as $$
+  select not exists (select 1 from public.profiles where username = lower(trim(p_username)));
+$$;
 
 -- ── JOBS ────────────────────────────────────────────────────────────────
 
