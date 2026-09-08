@@ -2108,13 +2108,32 @@ class _TransactionsTabState extends State<_TransactionsTab> {
   }
 
   Future<List<Map<String, dynamic>>> _load() async {
-    final rows = await supabase
-        .from('transactions')
-        .select(
-          '*, job:jobs(category), client:profiles!transactions_client_id_fkey(first_name,last_name), worker:profiles!transactions_worker_id_fkey(first_name,last_name)',
-        )
-        .order('created_at', ascending: false);
-    return (rows as List).cast<Map<String, dynamic>>();
+    final txRows =
+        ((await supabase
+                    .from('transactions')
+                    .select(
+                      '*, job:jobs(category), client:profiles!transactions_client_id_fkey(first_name,last_name), worker:profiles!transactions_worker_id_fkey(first_name,last_name)',
+                    ))
+                as List)
+            .cast<Map<String, dynamic>>();
+
+    final cashoutRows =
+        ((await supabase
+                    .from('cashouts')
+                    .select(
+                      '*, worker:profiles!cashouts_worker_id_fkey(first_name,last_name)',
+                    ))
+                as List)
+            .cast<Map<String, dynamic>>();
+
+    return [
+      for (final t in txRows) {...t, '_kind': 'transaction'},
+      for (final c in cashoutRows) {...c, '_kind': 'cashout'},
+    ]..sort(
+      (a, b) => DateTime.parse(
+        b['created_at'] as String,
+      ).compareTo(DateTime.parse(a['created_at'] as String)),
+    );
   }
 
   Future<void> _refresh() async {
@@ -2132,7 +2151,8 @@ class _TransactionsTabState extends State<_TransactionsTab> {
         children: [
           const _TabHeading(
             title: "Transactions",
-            subtitle: "Every payment and refund on the platform",
+            subtitle:
+                "Every payment, refund, and GCash cashout on the platform",
           ),
           const SizedBox(height: 20),
           Expanded(
@@ -2166,7 +2186,7 @@ class _TransactionsTabState extends State<_TransactionsTab> {
                       child: DashboardStateMessage(
                         title: "No transactions yet.",
                         message:
-                            "Payments and refunds will show up here once jobs get paid.",
+                            "Payments, refunds, and cashouts will show up here once jobs get paid.",
                       ),
                     );
                   }
@@ -2262,16 +2282,22 @@ class _TransactionRow extends StatelessWidget {
     }
 
     final t = tx!;
+    final isCashout = t['_kind'] == 'cashout';
     final job = t['job'] as Map<String, dynamic>?;
     final client = t['client'] as Map<String, dynamic>?;
     final worker = t['worker'] as Map<String, dynamic>?;
-    final type = t['type'] as String;
-    final isRefund = type == 'refund';
+    final isRefund = !isCashout && t['type'] == 'refund';
     final amount = (t['amount'] as num).toDouble();
     final createdAt = DateTime.tryParse(t['created_at'] as String? ?? '');
     final dateLabel = createdAt == null
         ? '—'
         : "${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}";
+    final typeLabel = isCashout ? "Cashout" : (isRefund ? "Refund" : "Payment");
+    final typeColor = isCashout
+        ? DashboardColors.statusArrived
+        : (isRefund
+              ? DashboardColors.statusCancelled
+              : DashboardColors.statusCompleted);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -2283,18 +2309,20 @@ class _TransactionRow extends StatelessWidget {
           SizedBox(
             width: _tColJob,
             child: Text(
-              job?['category'] as String? ?? '—',
+              isCashout
+                  ? "GCash Cashout"
+                  : (job?['category'] as String? ?? '—'),
               style: DashboardText.body(
                 size: 13,
                 weight: FontWeight.w600,
-                color: Colors.black87,
+                color: isCashout ? DashboardColors.muted : Colors.black87,
               ),
             ),
           ),
           SizedBox(
             width: _tColClient,
             child: Text(
-              client == null
+              isCashout || client == null
                   ? '—'
                   : "${client['first_name']} ${client['last_name']}",
               style: DashboardText.body(size: 13, color: DashboardColors.muted),
@@ -2314,21 +2342,15 @@ class _TransactionRow extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color:
-                    (isRefund
-                            ? DashboardColors.statusCancelled
-                            : DashboardColors.statusCompleted)
-                        .withValues(alpha: 0.12),
+                color: typeColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                isRefund ? "Refund" : "Payment",
+                typeLabel,
                 style: DashboardText.body(
                   size: 11,
                   weight: FontWeight.w700,
-                  color: isRefund
-                      ? DashboardColors.statusCancelled
-                      : DashboardColors.statusCompleted,
+                  color: typeColor,
                 ),
               ),
             ),

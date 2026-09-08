@@ -1,10 +1,12 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../models/job.dart';
 import '../../models/weather_info.dart';
 import '../../services/weather_service.dart';
 import '../../theme/dashboard_theme.dart';
 import '../../utils/formatters.dart';
+import '../../utils/validators.dart';
 
 /// Fixed-look gradient header used at the top of every dashboard —
 /// navy → #0a2d6b, rounded 14, matches the React DashboardShell header.
@@ -625,6 +627,117 @@ showAddCertificateDialog(BuildContext context) {
                 ),
                 child: Text(
                   "Add",
+                  style: DashboardText.body(size: 14, weight: FontWeight.w700),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+/// Collects an amount + GCash number for a worker's cash-out request. Only
+/// collects the input — the caller calls the `request_cashout` RPC and
+/// refreshes, same division of labor as [showReasonDialog]. Prefills the
+/// amount with the full available balance since cashing out everything is
+/// the common case, and the GCash number with the worker's profile phone
+/// since that's what it's already used for (see the Admin/Worker/Client
+/// profile screens' "used for GCash payment verification" note).
+Future<({double amount, String gcashNumber})?> showCashOutDialog(
+  BuildContext context, {
+  required double availableBalance,
+  required String initialGcashNumber,
+}) {
+  final amountCtrl = TextEditingController(
+    text: availableBalance > 0 ? availableBalance.toStringAsFixed(0) : '',
+  );
+  final gcashCtrl = TextEditingController(text: initialGcashNumber);
+  return showDialog<({double amount, String gcashNumber})>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (dialogContext, setState) {
+          final amount = double.tryParse(amountCtrl.text.trim());
+          final amountValid =
+              amount != null && amount > 0 && amount <= availableBalance;
+          final gcashValid = isValidPhMobile(gcashCtrl.text);
+          final canSubmit = amountValid && gcashValid;
+
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            title: Text(
+              "Cash Out to GCash",
+              style: DashboardText.heading(size: 17, color: Colors.black87),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  "Available balance: ₱${availableBalance.toStringAsFixed(0)}",
+                  style: DashboardText.body(
+                    size: 13,
+                    color: DashboardColors.muted,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: amountCtrl,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                  ],
+                  style: DashboardText.body(size: 14, color: Colors.black87),
+                  decoration: dashboardInputDecoration(
+                    label: "Amount",
+                    hint: "0.00",
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: gcashCtrl,
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [PhPhoneInputFormatter()],
+                  style: DashboardText.body(size: 14, color: Colors.black87),
+                  decoration: dashboardInputDecoration(
+                    label: "GCash Number",
+                    hint: "0917 123 4567",
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(
+                  "Cancel",
+                  style: DashboardText.body(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: DashboardColors.muted,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: canSubmit
+                    ? () => Navigator.of(dialogContext).pop((
+                        amount: amount,
+                        gcashNumber: gcashCtrl.text.trim(),
+                      ))
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DashboardColors.accent,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text(
+                  "Cash Out",
                   style: DashboardText.body(size: 14, weight: FontWeight.w700),
                 ),
               ),

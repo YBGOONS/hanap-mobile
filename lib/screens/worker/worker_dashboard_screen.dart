@@ -1465,6 +1465,8 @@ class _EarningsData {
   final int inProgressCount;
   final int totalCount;
   final double totalEarned;
+  final double availableBalance;
+  final String gcashNumber;
   final List<Map<String, dynamic>> transactions;
 
   const _EarningsData({
@@ -1472,6 +1474,8 @@ class _EarningsData {
     required this.inProgressCount,
     required this.totalCount,
     required this.totalEarned,
+    required this.availableBalance,
+    required this.gcashNumber,
     required this.transactions,
   });
 }
@@ -1514,6 +1518,21 @@ class _EarningsTabState extends State<_EarningsTab> {
                 as List)
             .cast<Map<String, dynamic>>();
 
+    final cashoutRows =
+        ((await supabase
+                    .from('cashouts')
+                    .select('amount, gcash_number, created_at')
+                    .eq('worker_id', userId)
+                    .order('created_at', ascending: false))
+                as List)
+            .cast<Map<String, dynamic>>();
+
+    final profileRow = await supabase
+        .from('profiles')
+        .select('phone')
+        .eq('id', userId)
+        .single();
+
     // Only count money that's actually been released — an escrowed
     // ('paid') job's transaction row exists but the worker hasn't been
     // paid out yet, and a refunded one never will be.
@@ -1531,6 +1550,23 @@ class _EarningsTabState extends State<_EarningsTab> {
               ((t['worker_amount'] as num?) ?? (t['amount'] as num)).toDouble(),
         );
 
+    final cashedOut = cashoutRows.fold<double>(
+      0,
+      (sum, c) => sum + (c['amount'] as num).toDouble(),
+    );
+
+    // Merge payments/refunds and cashouts into one chronological history —
+    // tagged with `_kind` since cashouts don't carry a `job`/`type`.
+    final history =
+        [
+          for (final t in txRows) {...t, '_kind': 'transaction'},
+          for (final c in cashoutRows) {...c, '_kind': 'cashout'},
+        ]..sort(
+          (a, b) => DateTime.parse(
+            b['created_at'] as String,
+          ).compareTo(DateTime.parse(a['created_at'] as String)),
+        );
+
     return _EarningsData(
       doneCount: jobRows.where((j) => j['status'] == 'completed').length,
       inProgressCount: jobRows
@@ -1543,8 +1579,39 @@ class _EarningsTabState extends State<_EarningsTab> {
           .length,
       totalCount: jobRows.length,
       totalEarned: earned,
-      transactions: txRows,
+      availableBalance: earned - cashedOut,
+      gcashNumber: profileRow['phone'] as String? ?? '',
+      transactions: history,
     );
+  }
+
+  Future<void> _cashOut(_EarningsData data) async {
+    final result = await showCashOutDialog(
+      context,
+      availableBalance: data.availableBalance,
+      initialGcashNumber: data.gcashNumber,
+    );
+    if (result == null || !mounted) return;
+    try {
+      await supabase.rpc(
+        'request_cashout',
+        params: {'amount': result.amount, 'gcash_number': result.gcashNumber},
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "₱${result.amount.toStringAsFixed(0)} sent to your GCash.",
+          ),
+        ),
+      );
+      await _refresh();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   Future<void> _refresh() async {
@@ -1643,6 +1710,63 @@ class _EarningsTabState extends State<_EarningsTab> {
                     ],
                   ),
                 ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: DashboardColors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Available Balance",
+                              style: DashboardText.body(
+                                size: 12,
+                                weight: FontWeight.w600,
+                                color: DashboardColors.muted,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              "₱${data.availableBalance.toStringAsFixed(0)}",
+                              style: DashboardText.heading(
+                                size: 20,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: data.availableBalance <= 0
+                            ? null
+                            : () => _cashOut(data),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: DashboardColors.accent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 12,
+                          ),
+                        ),
+                        child: Text(
+                          "Cash Out",
+                          style: DashboardText.body(
+                            size: 13,
+                            weight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -1711,6 +1835,61 @@ class _PaymentHistoryItem extends StatelessWidget {
     final dateLabel = createdAt == null
         ? ''
         : "${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}";
+
+    if (tx['_kind'] == 'cashout') {
+      final amount = (tx['amount'] as num).toDouble();
+      final gcash = tx['gcash_number'] as String? ?? '';
+      final digits = gcash.replaceAll(RegExp(r'\D'), '');
+      final last4 = digits.length >= 4
+          ? digits.substring(digits.length - 4)
+          : digits;
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: DashboardColors.border),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Cashed Out to GCash",
+                      style: DashboardText.heading(
+                        size: 14,
+                        weight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      "$dateLabel · •••• $last4",
+                      style: DashboardText.body(
+                        size: 12,
+                        color: DashboardColors.muted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                "-₱${amount.toStringAsFixed(0)}",
+                style: DashboardText.heading(
+                  size: 15,
+                  color: DashboardColors.statusArrived,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final isRefund = tx['type'] == 'refund';
     final amount = isRefund
         ? (tx['amount'] as num).toDouble()

@@ -754,6 +754,81 @@ grant execute on function public.mark_job_paid(uuid) to authenticated;
 grant execute on function public.request_refund(uuid, text, text) to authenticated;
 grant execute on function public.resolve_refund(uuid, boolean, text) to authenticated;
 
+-- ── CASHOUTS (worker withdrawals to GCash) ─────────────────────────────
+-- A worker "cashes out" their released job earnings to their registered
+-- GCash number. Simulated instant like mark_job_paid's escrow — no real
+-- payment gateway involved — so a row here means the withdrawal already
+-- happened. Written only through request_cashout() below (security
+-- definer), same convention as the transactions RPCs above: it re-derives
+-- the available balance server-side instead of trusting a client-supplied
+-- number, so two rapid requests can't ever double-spend the same balance.
+
+create table public.cashouts (
+  id uuid primary key default gen_random_uuid(),
+  worker_id uuid not null references public.profiles (id) on delete cascade,
+  amount numeric(10, 2) not null check (amount > 0),
+  gcash_number text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.cashouts enable row level security;
+grant select on public.cashouts to authenticated;
+create index cashouts_worker_id_idx on public.cashouts (worker_id);
+
+create policy "cashouts_select_own_or_admin"
+  on public.cashouts for select
+  to authenticated
+  using (
+    worker_id = auth.uid()
+    or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+  );
+
+create or replace function public.request_cashout(amount numeric, gcash_number text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_earned numeric(10, 2);
+  v_cashed_out numeric(10, 2);
+  v_available numeric(10, 2);
+begin
+  if amount is null or amount <= 0 then
+    raise exception 'Enter a valid amount.';
+  end if;
+  if gcash_number is null or length(trim(gcash_number)) = 0 then
+    raise exception 'A GCash number is required.';
+  end if;
+
+  select coalesce(sum(t.worker_amount), 0) into v_earned
+  from public.transactions t
+  join public.jobs j on j.id = t.job_id
+  where t.worker_id = auth.uid() and t.type = 'payment' and j.payment_status = 'released';
+
+  select coalesce(sum(c.amount), 0) into v_cashed_out
+  from public.cashouts c
+  where c.worker_id = auth.uid();
+
+  v_available := v_earned - v_cashed_out;
+
+  if amount > v_available then
+    raise exception 'Amount exceeds your available balance.';
+  end if;
+
+  insert into public.cashouts (worker_id, amount, gcash_number)
+  values (auth.uid(), amount, gcash_number);
+
+  insert into public.notifications (user_id, title, body)
+  values (
+    auth.uid(),
+    'Cash out successful',
+    '₱' || amount::text || ' was sent to your GCash number ending in ' || right(gcash_number, 4) || '.'
+  );
+end;
+$$;
+
+grant execute on function public.request_cashout(numeric, text) to authenticated;
+
 -- ── RATINGS ─────────────────────────────────────────────────────────────
 -- One rating per completed job, left by the client for the worker. Public
 -- read (any authenticated user can see a worker's reviews, same idea as the
