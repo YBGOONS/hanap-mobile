@@ -496,6 +496,146 @@ Future<String?> showReasonDialog(
   );
 }
 
+/// Collects a title/issuer/file for a new portfolio certificate. Only
+/// collects the input — the caller uploads the file and inserts the row,
+/// same division of labor as [showReasonDialog].
+Future<({String title, String issuer, PlatformFile file})?>
+showAddCertificateDialog(BuildContext context) {
+  final titleCtrl = TextEditingController();
+  final issuerCtrl = TextEditingController();
+  PlatformFile? file;
+  return showDialog<({String title, String issuer, PlatformFile file})>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (dialogContext, setState) {
+          final canSubmit = titleCtrl.text.trim().isNotEmpty && file != null;
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            title: Text(
+              "Add Certificate",
+              style: DashboardText.heading(size: 17, color: Colors.black87),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: titleCtrl,
+                  autofocus: true,
+                  style: DashboardText.body(size: 14, color: Colors.black87),
+                  decoration: dashboardInputDecoration(
+                    label: "Title",
+                    hint: "TESDA NC II - Electrical Installation",
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: issuerCtrl,
+                  style: DashboardText.body(size: 14, color: Colors.black87),
+                  decoration: dashboardInputDecoration(
+                    label: "Issuer (optional)",
+                    hint: "TESDA",
+                  ),
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: () async {
+                    final result = await FilePicker.platform.pickFiles(
+                      type: FileType.custom,
+                      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+                      withData: true,
+                    );
+                    if (result != null && result.files.isNotEmpty) {
+                      setState(() => file = result.files.first);
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: file != null
+                          ? DashboardColors.primary.withValues(alpha: 0.06)
+                          : DashboardColors.border.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: file != null
+                            ? DashboardColors.primary
+                            : DashboardColors.border,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          file != null ? Icons.check_circle : Icons.upload_file,
+                          size: 18,
+                          color: file != null
+                              ? DashboardColors.primary
+                              : DashboardColors.muted,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            file?.name ?? "Choose file (JPG, PNG, PDF)",
+                            overflow: TextOverflow.ellipsis,
+                            style: DashboardText.body(
+                              size: 13,
+                              weight: file != null
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              color: file != null
+                                  ? Colors.black87
+                                  : DashboardColors.muted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(
+                  "Cancel",
+                  style: DashboardText.body(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: DashboardColors.muted,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: canSubmit
+                    ? () => Navigator.of(dialogContext).pop((
+                        title: titleCtrl.text.trim(),
+                        issuer: issuerCtrl.text.trim(),
+                        file: file!,
+                      ))
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DashboardColors.accent,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text(
+                  "Add",
+                  style: DashboardText.body(size: 14, weight: FontWeight.w700),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
 /// Star-rating + comment picker shown when a client rates a completed job's
 /// worker. Only collects the input — the caller is responsible for calling
 /// the `rate_job` RPC and refreshing, same division of labor as

@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../main.dart';
 import '../../models/categories.dart';
+import '../../models/certificate.dart';
 import '../../models/job.dart';
 import '../../theme/dashboard_theme.dart';
 import '../../utils/validators.dart';
@@ -1787,6 +1788,7 @@ class _ProfileTab extends StatefulWidget {
 
 class _ProfileTabState extends State<_ProfileTab> {
   late Future<Map<String, dynamic>> _profileFuture;
+  late Future<List<Certificate>> _certsFuture;
   final _locationCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
@@ -1794,6 +1796,8 @@ class _ProfileTabState extends State<_ProfileTab> {
   bool _uploadingAvatar = false;
   bool _savingLocation = false;
   bool _savingSkills = false;
+  bool _uploadingCert = false;
+  String? _deletingCertId;
   String? _locationError;
   String? _locationSuccess;
   String? _skillsSuccess;
@@ -1815,6 +1819,99 @@ class _ProfileTabState extends State<_ProfileTab> {
   void initState() {
     super.initState();
     _profileFuture = _loadProfile();
+    _certsFuture = _loadCertificates();
+  }
+
+  Future<List<Certificate>> _loadCertificates() async {
+    final userId = supabase.auth.currentUser!.id;
+    final rows = await supabase
+        .from('certificates')
+        .select()
+        .eq('worker_id', userId)
+        .order('created_at', ascending: false);
+    return (rows as List)
+        .map((r) => Certificate.fromMap(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> _addCertificate() async {
+    final input = await showAddCertificateDialog(context);
+    if (input == null || !mounted) return;
+
+    final bytes = input.file.bytes;
+    if (bytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Could not read that file. Please try again."),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _uploadingCert = true);
+    try {
+      final userId = supabase.auth.currentUser!.id;
+      final ext = (input.file.extension ?? 'dat').toLowerCase();
+      final path =
+          '$userId/${DateTime.now().millisecondsSinceEpoch}_${input.file.name.split('.').first}.$ext';
+
+      await supabase.storage
+          .from('certificates')
+          .uploadBinary(path, bytes, fileOptions: const FileOptions());
+
+      await supabase.from('certificates').insert({
+        'worker_id': userId,
+        'title': input.title,
+        'issuer': input.issuer.isEmpty ? null : input.issuer,
+        'file_path': path,
+      });
+
+      if (!mounted) return;
+      setState(() {
+        _uploadingCert = false;
+        _certsFuture = _loadCertificates();
+      });
+    } on StorageException catch (e) {
+      if (!mounted) return;
+      setState(() => _uploadingCert = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _uploadingCert = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Upload failed. Please try again.")),
+      );
+    }
+  }
+
+  Future<void> _deleteCertificate(Certificate cert) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: "Remove this certificate?",
+      message: "\"${cert.title}\" will be removed from your profile.",
+      confirmLabel: "Remove",
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _deletingCertId = cert.id);
+    try {
+      await supabase.from('certificates').delete().eq('id', cert.id);
+      await supabase.storage.from('certificates').remove([cert.filePath]);
+      if (!mounted) return;
+      setState(() {
+        _deletingCertId = null;
+        _certsFuture = _loadCertificates();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _deletingCertId = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't remove that. Try again.")),
+      );
+    }
   }
 
   @override
@@ -2394,6 +2491,204 @@ class _ProfileTabState extends State<_ProfileTab> {
                                 ),
                               ),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: DashboardColors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Portfolio",
+                                style: DashboardText.body(
+                                  size: 12,
+                                  weight: FontWeight.w700,
+                                  color: DashboardColors.muted,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                "Certificates and credentials clients see on your profile.",
+                                style: DashboardText.body(
+                                  size: 12,
+                                  color: DashboardColors.muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: _uploadingCert ? null : _addCertificate,
+                          icon: _uploadingCert
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.add, size: 16),
+                          label: Text(
+                            "Add",
+                            style: DashboardText.body(
+                              size: 13,
+                              weight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    FutureBuilder<List<Certificate>>(
+                      future: _certsFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            !snapshot.hasData) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Center(
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: DashboardColors.primary,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        final certs = snapshot.data ?? [];
+                        if (certs.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              "No certificates yet. Add your TESDA NC or training certificates so clients can see them.",
+                              style: DashboardText.body(
+                                size: 12,
+                                color: DashboardColors.muted,
+                              ),
+                            ),
+                          );
+                        }
+                        return Column(
+                          children: certs.map((cert) {
+                            final url = supabase.storage
+                                .from('certificates')
+                                .getPublicUrl(cert.filePath);
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: DashboardColors.bg,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: DashboardColors.border,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: cert.isImage
+                                        ? Image.network(
+                                            url,
+                                            width: 36,
+                                            height: 36,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, _, _) =>
+                                                const Icon(
+                                                  Icons.description_outlined,
+                                                  size: 20,
+                                                  color: DashboardColors.muted,
+                                                ),
+                                          )
+                                        : Container(
+                                            width: 36,
+                                            height: 36,
+                                            color: DashboardColors.border,
+                                            child: const Icon(
+                                              Icons.picture_as_pdf_outlined,
+                                              size: 18,
+                                              color: DashboardColors.muted,
+                                            ),
+                                          ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          cert.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: DashboardText.body(
+                                            size: 13,
+                                            weight: FontWeight.w600,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        if (cert.issuer != null &&
+                                            cert.issuer!.isNotEmpty)
+                                          Text(
+                                            cert.issuer!,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: DashboardText.body(
+                                              size: 11.5,
+                                              color: DashboardColors.muted,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  _deletingCertId == cert.id
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : IconButton(
+                                          onPressed: () =>
+                                              _deleteCertificate(cert),
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            size: 18,
+                                            color: Color(0xFFC62828),
+                                          ),
+                                          tooltip: "Remove",
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      },
                     ),
                   ],
                 ),

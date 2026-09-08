@@ -814,6 +814,66 @@ $$;
 
 grant execute on function public.rate_job(uuid, smallint, text) to authenticated;
 
+-- ── CERTIFICATES (worker portfolio) ────────────────────────────────────
+-- A worker's uploaded credentials (TESDA NC, training certs, etc.) —
+-- browsable by any client checking that worker's profile, same visibility
+-- model as ratings below. No security definer RPC needed here (unlike
+-- jobs/transactions) since a worker managing their own row is exactly what
+-- plain RLS is for.
+
+create table public.certificates (
+  id uuid primary key default gen_random_uuid(),
+  worker_id uuid not null references public.profiles (id) on delete cascade,
+  title text not null,
+  issuer text,
+  file_path text not null, -- storage path in the certificates bucket
+  created_at timestamptz not null default now()
+);
+
+alter table public.certificates enable row level security;
+grant select, insert, delete on public.certificates to authenticated;
+create index certificates_worker_id_idx on public.certificates (worker_id);
+
+create policy "certificates_select_all"
+  on public.certificates for select
+  to authenticated
+  using (true);
+
+create policy "certificates_insert_own"
+  on public.certificates for insert
+  to authenticated
+  with check (
+    worker_id = auth.uid()
+    and exists (select 1 from public.profiles where id = auth.uid() and role = 'worker')
+  );
+
+create policy "certificates_delete_own"
+  on public.certificates for delete
+  to authenticated
+  using (worker_id = auth.uid());
+
+-- Public bucket (like avatars) — a certificate is meant to be seen by
+-- clients checking a worker's profile, not just the worker themselves.
+insert into storage.buckets (id, name, public)
+values ('certificates', 'certificates', true)
+on conflict (id) do nothing;
+
+create policy "certificates_upload_own_folder"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'certificates'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "certificates_delete_own_folder"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'certificates'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
 -- ── SCHEDULED JOBS (pg_cron) ────────────────────────────────────────────
 -- Two background sweeps: auto-cancel open jobs nobody accepted by their
 -- scheduled date, and a once-daily reminder for jobs happening tomorrow.

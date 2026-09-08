@@ -2,7 +2,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../main.dart';
+import '../../models/certificate.dart';
 import '../../models/job.dart';
 import '../../theme/dashboard_theme.dart';
 import '../../utils/formatters.dart';
@@ -1421,6 +1423,7 @@ class _WorkerDetailsSheet extends StatefulWidget {
 
 class _WorkerDetailsSheetState extends State<_WorkerDetailsSheet> {
   late final Future<List<Map<String, dynamic>>> _ratingsFuture = _loadRatings();
+  late final Future<List<Certificate>> _certsFuture = _loadCertificates();
 
   Future<List<Map<String, dynamic>>> _loadRatings() async {
     final rows = await supabase
@@ -1429,6 +1432,17 @@ class _WorkerDetailsSheetState extends State<_WorkerDetailsSheet> {
         .eq('worker_id', widget.worker['id'] as String)
         .order('created_at', ascending: false);
     return (rows as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Certificate>> _loadCertificates() async {
+    final rows = await supabase
+        .from('certificates')
+        .select()
+        .eq('worker_id', widget.worker['id'] as String)
+        .order('created_at', ascending: false);
+    return (rows as List)
+        .map((r) => Certificate.fromMap(r as Map<String, dynamic>))
+        .toList();
   }
 
   @override
@@ -1567,6 +1581,130 @@ class _WorkerDetailsSheetState extends State<_WorkerDetailsSheet> {
                       .toList(),
                 ),
               ],
+              const SizedBox(height: 20),
+              Text(
+                "Certificates",
+                style: DashboardText.heading(size: 13, color: Colors.black87),
+              ),
+              const SizedBox(height: 8),
+              FutureBuilder<List<Certificate>>(
+                future: _certsFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: DashboardColors.primary,
+                        ),
+                      ),
+                    );
+                  }
+                  final certs = snapshot.data ?? [];
+                  if (certs.isEmpty) {
+                    return Text(
+                      "No certificates uploaded yet.",
+                      style: DashboardText.body(
+                        size: 12,
+                        color: DashboardColors.muted,
+                      ),
+                    );
+                  }
+                  return Column(
+                    children: certs.map((cert) {
+                      final url = supabase.storage
+                          .from('certificates')
+                          .getPublicUrl(cert.filePath);
+                      return InkWell(
+                        onTap: () => launchUrl(
+                          Uri.parse(url),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: DashboardColors.bg,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: DashboardColors.border),
+                          ),
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: cert.isImage
+                                    ? Image.network(
+                                        url,
+                                        width: 36,
+                                        height: 36,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, _, _) => const Icon(
+                                          Icons.description_outlined,
+                                          size: 20,
+                                          color: DashboardColors.muted,
+                                        ),
+                                      )
+                                    : Container(
+                                        width: 36,
+                                        height: 36,
+                                        color: DashboardColors.border,
+                                        child: const Icon(
+                                          Icons.picture_as_pdf_outlined,
+                                          size: 18,
+                                          color: DashboardColors.muted,
+                                        ),
+                                      ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      cert.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: DashboardText.body(
+                                        size: 13,
+                                        weight: FontWeight.w600,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    if (cert.issuer != null &&
+                                        cert.issuer!.isNotEmpty)
+                                      Text(
+                                        cert.issuer!,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: DashboardText.body(
+                                          size: 11.5,
+                                          color: DashboardColors.muted,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(
+                                Icons.open_in_new,
+                                size: 15,
+                                color: DashboardColors.muted,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
               const SizedBox(height: 20),
               const Divider(height: 1, color: DashboardColors.border),
               const SizedBox(height: 20),
