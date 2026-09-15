@@ -843,6 +843,7 @@ as $$
 declare
   j record;
   v_worker_replied boolean;
+  v_first_from_sender boolean;
 begin
   if p_body is null or length(trim(p_body)) = 0 then
     raise exception 'Message can''t be empty.';
@@ -866,20 +867,30 @@ begin
     raise exception 'Not authorized.';
   end if;
 
+  -- Only the sender's *first* message in this thread notifies — the client's
+  -- report already notified the worker (see request_refund), and once the
+  -- back-and-forth is flowing, Messages (not a fresh notification per line)
+  -- is where it's meant to continue.
+  select not exists (
+    select 1 from public.refund_messages where job_id = p_job_id and sender_id = auth.uid()
+  ) into v_first_from_sender;
+
   insert into public.refund_messages (job_id, sender_id, body, evidence_path)
   values (p_job_id, auth.uid(), p_body, p_evidence_path);
 
-  if auth.uid() = j.client_id then
-    insert into public.notifications (user_id, title, body, job_id)
-    values (j.worker_id, 'New message on your refund dispute', 'The client replied on the "' || j.category || '" refund dispute.', j.id);
-  elsif auth.uid() = j.worker_id then
-    insert into public.notifications (user_id, title, body, job_id)
-    values (j.client_id, 'New message on your refund dispute', 'The worker replied on the "' || j.category || '" refund dispute.', j.id);
-  else
-    insert into public.notifications (user_id, title, body, job_id)
-    values (j.client_id, 'HANAP Admin joined your refund dispute', 'An admin posted a message on the "' || j.category || '" refund dispute.', j.id);
-    insert into public.notifications (user_id, title, body, job_id)
-    values (j.worker_id, 'HANAP Admin joined your refund dispute', 'An admin posted a message on the "' || j.category || '" refund dispute.', j.id);
+  if v_first_from_sender then
+    if auth.uid() = j.client_id then
+      insert into public.notifications (user_id, title, body, job_id)
+      values (j.worker_id, 'New message on your refund dispute', 'The client replied on the "' || j.category || '" refund dispute.', j.id);
+    elsif auth.uid() = j.worker_id then
+      insert into public.notifications (user_id, title, body, job_id)
+      values (j.client_id, 'Worker responded to your refund dispute', 'The worker replied on the "' || j.category || '" refund dispute — continue the conversation in Messages.', j.id);
+    else
+      insert into public.notifications (user_id, title, body, job_id)
+      values (j.client_id, 'HANAP Admin joined your refund dispute', 'An admin posted a message on the "' || j.category || '" refund dispute.', j.id);
+      insert into public.notifications (user_id, title, body, job_id)
+      values (j.worker_id, 'HANAP Admin joined your refund dispute', 'An admin posted a message on the "' || j.category || '" refund dispute.', j.id);
+    end if;
   end if;
 end;
 $$;

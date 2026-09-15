@@ -1791,6 +1791,143 @@ class _RefundDisputeThreadState extends State<RefundDisputeThread> {
     }
   }
 
+  Widget _statusChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: DashboardText.body(
+          size: 10,
+          weight: FontWeight.w800,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  /// [workerReplied] is null while the thread is still loading — the chip
+  /// is skipped for that one frame rather than guessing.
+  Widget _reportBox(
+    Job job, {
+    required bool isOpen,
+    required bool? workerReplied,
+  }) {
+    Widget? chip;
+    if (workerReplied != null) {
+      if (!isOpen) {
+        chip = _statusChip("CLOSED REPORT", const Color(0xFFC62828));
+      } else if (workerReplied) {
+        chip = _statusChip("OPEN REPORT", DashboardColors.statusCompleted);
+      } else {
+        chip = _statusChip("PENDING", DashboardColors.statusPending);
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: DashboardColors.bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.flag_outlined,
+                size: 15,
+                color: DashboardColors.muted,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  "Client's report",
+                  style: DashboardText.body(
+                    size: 12,
+                    weight: FontWeight.w700,
+                    color: DashboardColors.muted,
+                  ),
+                ),
+              ),
+              ?chip,
+            ],
+          ),
+          if (job.refundReason != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              job.refundReason!,
+              style: DashboardText.body(size: 13, color: Colors.black87),
+            ),
+          ],
+          if (job.refundPhotoUrl != null) ...[
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () => _viewEvidence(job.refundPhotoUrl!),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.image_outlined,
+                    size: 14,
+                    color: DashboardColors.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    "View evidence photo",
+                    style: DashboardText.body(
+                      size: 12,
+                      weight: FontWeight.w600,
+                      color: DashboardColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (isOpen &&
+              workerReplied == false &&
+              job.refundRequestedAt != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _refundDeadlineLabel(job.refundRequestedAt!),
+              style: DashboardText.body(
+                size: 11.5,
+                weight: FontWeight.w600,
+                color: DashboardColors.accent,
+              ),
+            ),
+          ],
+          if (isOpen && workerReplied == true) ...[
+            const SizedBox(height: 8),
+            Text(
+              "Worker responded — continue the conversation in Messages.",
+              style: DashboardText.body(
+                size: 11.5,
+                weight: FontWeight.w600,
+                color: DashboardColors.statusCompleted,
+              ),
+            ),
+          ],
+          if (!isOpen && job.refundAdminMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              job.refundAdminMessage!,
+              style: DashboardText.body(
+                size: 12,
+                color: DashboardColors.muted,
+              ).copyWith(fontStyle: FontStyle.italic),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final job = widget.job;
@@ -1809,148 +1946,70 @@ class _RefundDisputeThreadState extends State<RefundDisputeThread> {
           style: DashboardText.heading(size: 15, color: Colors.black87),
         ),
         const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: DashboardColors.bg,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.flag_outlined,
-                    size: 15,
-                    color: DashboardColors.muted,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    "Client's report",
-                    style: DashboardText.body(
-                      size: 12,
-                      weight: FontWeight.w700,
-                      color: DashboardColors.muted,
-                    ),
-                  ),
-                ],
-              ),
-              if (job.refundReason != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  job.refundReason!,
-                  style: DashboardText.body(size: 13, color: Colors.black87),
-                ),
-              ],
-              if (job.refundPhotoUrl != null) ...[
-                const SizedBox(height: 8),
-                InkWell(
-                  onTap: () => _viewEvidence(job.refundPhotoUrl!),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.image_outlined,
-                        size: 14,
-                        color: DashboardColors.primary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        "View evidence photo",
-                        style: DashboardText.body(
-                          size: 12,
-                          weight: FontWeight.w600,
-                          color: DashboardColors.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              if (isOpen && job.refundRequestedAt != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _refundDeadlineLabel(job.refundRequestedAt!),
-                  style: DashboardText.body(
-                    size: 11.5,
-                    weight: FontWeight.w600,
-                    color: DashboardColors.accent,
-                  ),
-                ),
-              ],
-              if (!isOpen && job.refundAdminMessage != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  job.refundAdminMessage!,
-                  style: DashboardText.body(
-                    size: 12,
-                    color: DashboardColors.muted,
-                  ).copyWith(fontStyle: FontStyle.italic),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
         FutureBuilder<List<RefundMessage>>(
           future: _messagesFuture,
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: DashboardColors.primary,
-                  ),
-                ),
-              );
-            }
+            final loading =
+                snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData;
             final messages = snapshot.data ?? [];
-            final workerReplied = messages.any(
-              (m) => m.senderId == job.workerId,
-            );
-            final canReply = isOpen && (isParticipant || workerReplied);
+            final workerReplied = loading
+                ? null
+                : messages.any((m) => m.senderId == job.workerId);
+            final canReply = isOpen && (isParticipant || workerReplied == true);
+
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (final m in messages)
-                  _RefundMessageBubble(
-                    message: m,
-                    isMine: m.senderId == userId,
-                    onViewEvidence: _viewEvidence,
-                  ),
-                if (messages.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      "No replies yet.",
+                _reportBox(job, isOpen: isOpen, workerReplied: workerReplied),
+                const SizedBox(height: 10),
+                if (loading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: DashboardColors.primary,
+                      ),
+                    ),
+                  )
+                else ...[
+                  for (final m in messages)
+                    _RefundMessageBubble(
+                      message: m,
+                      isMine: m.senderId == userId,
+                      onViewEvidence: _viewEvidence,
+                    ),
+                  if (messages.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        "No replies yet.",
+                        style: DashboardText.body(
+                          size: 12,
+                          color: DashboardColors.muted,
+                        ),
+                      ),
+                    ),
+                  if (canReply)
+                    _ReplyComposer(
+                      controller: _replyCtrl,
+                      evidenceFile: _evidenceFile,
+                      sending: _sending,
+                      onPickEvidence: _pickEvidence,
+                      onSend: _send,
+                    )
+                  else if (isOpen && !isParticipant && workerReplied == false)
+                    Text(
+                      "Waiting for the worker to respond before Admin can join.",
                       style: DashboardText.body(
                         size: 12,
                         color: DashboardColors.muted,
                       ),
                     ),
-                  ),
-                if (canReply)
-                  _ReplyComposer(
-                    controller: _replyCtrl,
-                    evidenceFile: _evidenceFile,
-                    sending: _sending,
-                    onPickEvidence: _pickEvidence,
-                    onSend: _send,
-                  )
-                else if (isOpen && !isParticipant && !workerReplied)
-                  Text(
-                    "Waiting for the worker to respond before Admin can join.",
-                    style: DashboardText.body(
-                      size: 12,
-                      color: DashboardColors.muted,
-                    ),
-                  ),
+                ],
               ],
             );
           },
