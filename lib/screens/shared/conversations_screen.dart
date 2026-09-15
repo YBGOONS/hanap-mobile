@@ -3,6 +3,7 @@ import '../../main.dart';
 import '../../models/job.dart';
 import '../../models/message.dart';
 import '../../theme/dashboard_theme.dart';
+import '../../utils/formatters.dart';
 import '../../widgets/dashboard/dashboard_widgets.dart';
 import 'chat_screen.dart';
 
@@ -21,10 +22,14 @@ class _ConversationEntry {
   final Job job;
   final Message? lastMessage;
   final int unreadCount;
+  final DateTime lastActivity;
+  final bool workerRepliedToDispute;
   const _ConversationEntry({
     required this.job,
     this.lastMessage,
     required this.unreadCount,
+    required this.lastActivity,
+    required this.workerRepliedToDispute,
   });
 }
 
@@ -69,22 +74,60 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
       byJob.putIfAbsent(m.jobId, () => []).add(m);
     }
 
+    // Refund dispute activity lives in a separate table — folded in here so
+    // a job with a live dispute sorts by *its* most recent reply, not by
+    // whenever the job itself happened to be posted, and so a tile can tell
+    // whether the worker has actually replied yet.
+    final disputeJobIds = jobs
+        .where((j) => j.refundRequestedAt != null)
+        .map((j) => j.id)
+        .toList();
+    final List refundMsgRows = disputeJobIds.isEmpty
+        ? const []
+        : await supabase
+              .from('refund_messages')
+              .select('job_id, sender_id, created_at')
+              .inFilter('job_id', disputeJobIds);
+    final workerIdByJob = {for (final j in jobs) j.id: j.workerId};
+    final latestRefundActivity = <String, DateTime>{};
+    final workerRepliedByJob = <String, bool>{};
+    for (final row in refundMsgRows) {
+      final jobId = row['job_id'] as String;
+      final createdAt = DateTime.parse(row['created_at'] as String);
+      final current = latestRefundActivity[jobId];
+      if (current == null || createdAt.isAfter(current)) {
+        latestRefundActivity[jobId] = createdAt;
+      }
+      if (row['sender_id'] == workerIdByJob[jobId]) {
+        workerRepliedByJob[jobId] = true;
+      }
+    }
+
     final entries = jobs.map((j) {
       final jobMessages = byJob[j.id] ?? const <Message>[];
       final unread = jobMessages
           .where((m) => m.senderId != userId && m.readAt == null)
           .length;
       final last = jobMessages.isNotEmpty ? jobMessages.first : null;
-      return _ConversationEntry(job: j, lastMessage: last, unreadCount: unread);
+
+      final candidates = <DateTime>[j.createdAt];
+      if (last != null) candidates.add(last.createdAt);
+      if (j.refundRequestedAt != null) candidates.add(j.refundRequestedAt!);
+      final latestRefund = latestRefundActivity[j.id];
+      if (latestRefund != null) candidates.add(latestRefund);
+
+      return _ConversationEntry(
+        job: j,
+        lastMessage: last,
+        unreadCount: unread,
+        lastActivity: candidates.reduce((a, b) => a.isAfter(b) ? a : b),
+        workerRepliedToDispute: workerRepliedByJob[j.id] ?? false,
+      );
     }).toList();
 
-    // Most recent activity first — falls back to job creation time for
-    // threads with no messages sent yet.
-    entries.sort((a, b) {
-      final aTime = a.lastMessage?.createdAt ?? a.job.createdAt;
-      final bTime = b.lastMessage?.createdAt ?? b.job.createdAt;
-      return bTime.compareTo(aTime);
-    });
+    // Most recent activity first, across regular chat and refund disputes
+    // alike.
+    entries.sort((a, b) => b.lastActivity.compareTo(a.lastActivity));
 
     return entries;
   }
@@ -153,10 +196,20 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                 final otherName = isClient
                     ? (entry.job.workerName ?? "Worker")
                     : (entry.job.clientName ?? "Client");
+                // An active dispute (worker has replied) takes this
+                // conversation over entirely — straight to the dispute
+                // thread instead of the otherwise-empty regular chat.
+                final activeDispute =
+                    entry.job.paymentStatus == 'refund_requested' &&
+                    entry.workerRepliedToDispute;
                 return _ConversationTile(
                   entry: entry,
                   otherName: otherName,
                   onTap: () async {
+                    if (activeDispute) {
+                      showJobDetailsSheet(context, entry.job);
+                      return;
+                    }
                     await Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) =>
@@ -203,13 +256,15 @@ class _ConversationTile extends StatelessWidget {
         ),
       ),
       title: Text(
-        otherName,
+        "${entry.job.category} · ${jobRefNo(entry.job.id)}",
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: DashboardText.heading(size: 14, color: Colors.black87),
       ),
       subtitle: Text(
         hasOpenDispute
-            ? "Refund dispute · ${entry.job.category}"
-            : "${entry.job.category} · $preview",
+            ? "Refund dispute · $otherName"
+            : "$otherName · $preview",
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: DashboardText.body(
