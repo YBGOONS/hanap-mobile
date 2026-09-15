@@ -10,12 +10,12 @@ import 'dashboard_widgets.dart';
 /// Progress fraction shown per job status — matches the client's job
 /// lifecycle in supabase/schema.sql (open → accepted → arrived → in_progress → completed).
 double _progressForStatus(String status) => switch (status) {
-      'accepted' => 0.25,
-      'arrived' => 0.5,
-      'in_progress' => 0.75,
-      'completed' => 1.0,
-      _ => 0.0,
-    };
+  'accepted' => 0.25,
+  'arrived' => 0.5,
+  'in_progress' => 0.75,
+  'completed' => 1.0,
+  _ => 0.0,
+};
 
 /// The client's single current job — title, worker, budget, location,
 /// status, progress bar, and the escrow-driven payment/rating actions.
@@ -30,49 +30,79 @@ class ActiveJobCard extends StatelessWidget {
     final statusStyle = dashboardStatusStyle(job.status);
 
     return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: DashboardColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("Active Job", style: DashboardText.body(size: 12, weight: FontWeight.w700, color: DashboardColors.muted).copyWith(letterSpacing: 0.6)),
-          const SizedBox(height: 10),
-
-          Row(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: DashboardColors.border),
+          ),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: Text(job.category, style: DashboardText.heading(size: 17, color: Colors.black87))),
-              DashboardStatusBadge(status: job.status),
+              Text(
+                "Active Job",
+                style: DashboardText.body(
+                  size: 12,
+                  weight: FontWeight.w700,
+                  color: DashboardColors.muted,
+                ).copyWith(letterSpacing: 0.6),
+              ),
+              const SizedBox(height: 10),
+
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      job.category,
+                      style: DashboardText.heading(
+                        size: 17,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  DashboardStatusBadge(status: job.status),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              _InfoRow(
+                icon: Icons.build_outlined,
+                label: "Worker",
+                value: job.workerName ?? "—",
+              ),
+              const SizedBox(height: 6),
+              _InfoRow(
+                icon: Icons.payments_outlined,
+                label: "Budget",
+                value: "₱${(job.budget ?? 0).toStringAsFixed(0)}",
+              ),
+              const SizedBox(height: 6),
+              _InfoRow(
+                icon: Icons.location_on_outlined,
+                label: "Location",
+                value: job.location,
+              ),
+              const SizedBox(height: 16),
+
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: _progressForStatus(job.status),
+                  minHeight: 6,
+                  backgroundColor: DashboardColors.border,
+                  valueColor: AlwaysStoppedAnimation(statusStyle.color),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              JobPaymentActions(job: job, onChanged: onChanged),
             ],
           ),
-          const SizedBox(height: 12),
-
-          _InfoRow(icon: Icons.build_outlined, label: "Worker", value: job.workerName ?? "—"),
-          const SizedBox(height: 6),
-          _InfoRow(icon: Icons.payments_outlined, label: "Budget", value: "₱${(job.budget ?? 0).toStringAsFixed(0)}"),
-          const SizedBox(height: 6),
-          _InfoRow(icon: Icons.location_on_outlined, label: "Location", value: job.location),
-          const SizedBox(height: 16),
-
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: _progressForStatus(job.status),
-              minHeight: 6,
-              backgroundColor: DashboardColors.border,
-              valueColor: AlwaysStoppedAnimation(statusStyle.color),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          JobPaymentActions(job: job, onChanged: onChanged),
-        ],
-      ),
-    ).animate().fadeIn(duration: 320.ms).slideY(begin: 0.06, end: 0, duration: 320.ms, curve: Curves.easeOut);
+        )
+        .animate()
+        .fadeIn(duration: 320.ms)
+        .slideY(begin: 0.06, end: 0, duration: 320.ms, curve: Curves.easeOut);
   }
 }
 
@@ -80,7 +110,11 @@ class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
-  const _InfoRow({required this.icon, required this.label, required this.value});
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -88,8 +122,20 @@ class _InfoRow extends StatelessWidget {
       children: [
         Icon(icon, size: 15, color: DashboardColors.muted),
         const SizedBox(width: 8),
-        Text("$label: ", style: DashboardText.body(size: 13, color: DashboardColors.muted)),
-        Expanded(child: Text(value, style: DashboardText.body(size: 13, weight: FontWeight.w600, color: Colors.black87))),
+        Text(
+          "$label: ",
+          style: DashboardText.body(size: 13, color: DashboardColors.muted),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: DashboardText.body(
+              size: 13,
+              weight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -111,7 +157,11 @@ class JobPaymentActions extends StatefulWidget {
   final Job job;
   final VoidCallback onChanged;
 
-  const JobPaymentActions({super.key, required this.job, required this.onChanged});
+  const JobPaymentActions({
+    super.key,
+    required this.job,
+    required this.onChanged,
+  });
 
   @override
   State<JobPaymentActions> createState() => _JobPaymentActionsState();
@@ -138,20 +188,32 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
       // — this only opens the checkout, it doesn't mark the job paid.
       // paymongo-webhook does that once PayMongo confirms the charge, so
       // the client needs to pull-to-refresh after finishing checkout.
-      final response = await supabase.functions.invoke('create-gcash-payment', body: {'job_id': job.id});
+      final response = await supabase.functions.invoke(
+        'create-gcash-payment',
+        body: {'job_id': job.id},
+      );
       final data = response.data as Map<String, dynamic>?;
       final checkoutUrl = data?['checkout_url'] as String?;
       if (checkoutUrl == null) {
         throw Exception(data?['error'] ?? 'Could not start payment.');
       }
-      await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication);
+      await launchUrl(
+        Uri.parse(checkoutUrl),
+        mode: LaunchMode.externalApplication,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Finish the GCash payment in the new tab, then pull down here to refresh.")),
+        const SnackBar(
+          content: Text(
+            "Finish the GCash payment in the new tab, then pull down here to refresh.",
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Payment failed: $e")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Payment failed: $e")));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -163,7 +225,11 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
 
     final bytes = result.file.bytes;
     if (bytes == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Could not read that photo. Please try again.")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Could not read that photo. Please try again."),
+        ),
+      );
       return;
     }
 
@@ -171,19 +237,43 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
     try {
       final userId = supabase.auth.currentUser!.id;
       final ext = (result.file.extension ?? 'jpg').toLowerCase();
-      final path = '$userId/${widget.job.id}_${DateTime.now().millisecondsSinceEpoch}.$ext';
-      await supabase.storage.from('refund-evidence').uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
+      final path =
+          '$userId/${widget.job.id}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await supabase.storage
+          .from('refund-evidence')
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: const FileOptions(upsert: true),
+          );
 
-      await supabase.rpc('request_refund', params: {'job_id': widget.job.id, 'reason': result.reason, 'photo_url': path});
+      await supabase.rpc(
+        'request_refund',
+        params: {
+          'job_id': widget.job.id,
+          'reason': result.reason,
+          'photo_url': path,
+        },
+      );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Refund requested. Waiting for admin review.")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Refund requested. The worker has 3 days to respond before it's automatically refunded.",
+          ),
+        ),
+      );
       widget.onChanged();
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } on StorageException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -192,13 +282,20 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
   Future<void> _confirmCompletion() async {
     setState(() => _loading = true);
     try {
-      await supabase.rpc('confirm_completion', params: {'job_id': widget.job.id});
+      await supabase.rpc(
+        'confirm_completion',
+        params: {'job_id': widget.job.id},
+      );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Payment sent to your worker!")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Payment sent to your worker!")),
+      );
       widget.onChanged();
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -210,13 +307,24 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
 
     setState(() => _rating = true);
     try {
-      await supabase.rpc('rate_job', params: {'job_id': widget.job.id, 'rating': result.rating, 'comment': result.comment.isEmpty ? null : result.comment});
+      await supabase.rpc(
+        'rate_job',
+        params: {
+          'job_id': widget.job.id,
+          'rating': result.rating,
+          'comment': result.comment.isEmpty ? null : result.comment,
+        },
+      );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Thanks for rating!")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Thanks for rating!")));
       widget.onChanged();
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
       if (mounted) setState(() => _rating = false);
     }
@@ -234,8 +342,22 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         child: _loading
-            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : Text("Pay Now", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Text(
+                "Pay Now",
+                style: DashboardText.body(
+                  size: 13,
+                  weight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
       ),
     );
   }
@@ -248,22 +370,44 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
       decoration: BoxDecoration(
         color: DashboardColors.primary.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: DashboardColors.primary.withValues(alpha: 0.25)),
+        border: Border.all(
+          color: DashboardColors.primary.withValues(alpha: 0.25),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.lock_clock_outlined, size: 15, color: DashboardColors.primary),
+              Icon(
+                Icons.lock_clock_outlined,
+                size: 15,
+                color: DashboardColors.primary,
+              ),
               const SizedBox(width: 6),
-              Text("Arrival Code", style: DashboardText.body(size: 12, weight: FontWeight.w700, color: DashboardColors.primary)),
+              Text(
+                "Arrival Code",
+                style: DashboardText.body(
+                  size: 12,
+                  weight: FontWeight.w700,
+                  color: DashboardColors.primary,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
-          Text(otp, style: DashboardText.heading(size: 26, color: DashboardColors.primary).copyWith(letterSpacing: 6)),
+          Text(
+            otp,
+            style: DashboardText.heading(
+              size: 26,
+              color: DashboardColors.primary,
+            ).copyWith(letterSpacing: 6),
+          ),
           const SizedBox(height: 4),
-          Text("Share this with your worker when they arrive.", style: DashboardText.body(size: 11, color: DashboardColors.muted)),
+          Text(
+            "Share this with your worker when they arrive.",
+            style: DashboardText.body(size: 11, color: DashboardColors.muted),
+          ),
         ],
       ),
     );
@@ -276,9 +420,27 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
       child: OutlinedButton.icon(
         onPressed: _rating ? null : _rateWorker,
         icon: _rating
-            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: DashboardColors.accent))
-            : const Icon(Icons.star_border, size: 18, color: DashboardColors.accent),
-        label: Text("Rate Worker", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: DashboardColors.accent)),
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: DashboardColors.accent,
+                ),
+              )
+            : const Icon(
+                Icons.star_border,
+                size: 18,
+                color: DashboardColors.accent,
+              ),
+        label: Text(
+          "Rate Worker",
+          style: DashboardText.body(
+            size: 13,
+            weight: FontWeight.w700,
+            color: DashboardColors.accent,
+          ),
+        ),
         style: OutlinedButton.styleFrom(
           side: const BorderSide(color: DashboardColors.accent),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -299,8 +461,18 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         child: _loading
-            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFC62828)))
-            : Text("Request Refund", style: DashboardText.body(size: 12, weight: FontWeight.w700)),
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFFC62828),
+                ),
+              )
+            : Text(
+                "Request Refund",
+                style: DashboardText.body(size: 12, weight: FontWeight.w700),
+              ),
       ),
     );
   }
@@ -317,11 +489,27 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
             style: ElevatedButton.styleFrom(
               backgroundColor: DashboardColors.statusCompleted,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             child: _loading
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Text("Confirm", style: DashboardText.body(size: 13, weight: FontWeight.w700, color: Colors.white)),
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    "Confirm",
+                    style: DashboardText.body(
+                      size: 13,
+                      weight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
           ),
         ),
         const SizedBox(height: 8),
@@ -337,18 +525,35 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: DashboardColors.bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: DashboardColors.border)),
+      decoration: BoxDecoration(
+        color: DashboardColors.bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: DashboardColors.border),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Receipt", style: DashboardText.body(size: 12, weight: FontWeight.w700, color: DashboardColors.muted)),
+          Text(
+            "Receipt",
+            style: DashboardText.body(
+              size: 12,
+              weight: FontWeight.w700,
+              color: DashboardColors.muted,
+            ),
+          ),
           const SizedBox(height: 8),
           _ReceiptLine(label: "Worker's Labor Fee", value: labor),
           _ReceiptLine(label: "HANAP Service Fee (10%)", value: fee),
           const Divider(height: 18),
           _ReceiptLine(label: "Total Paid", value: labor + fee, bold: true),
           const SizedBox(height: 6),
-          Text("Worker received ₱${labor.toStringAsFixed(0)}. Payment sent.", style: DashboardText.body(size: 11, color: DashboardColors.statusCompleted)),
+          Text(
+            "Worker received ₱${labor.toStringAsFixed(0)}. Payment sent.",
+            style: DashboardText.body(
+              size: 11,
+              color: DashboardColors.statusCompleted,
+            ),
+          ),
         ],
       ),
     );
@@ -361,12 +566,37 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
     if (job.paymentStatus == 'refunded') {
       return _StatusNote(
         icon: Icons.assignment_return_outlined,
-        text: job.refundAdminMessage == null ? "This job was refunded." : "Refunded: ${job.refundAdminMessage}",
+        text: job.refundAdminMessage == null
+            ? "This job was refunded."
+            : "Refunded: ${job.refundAdminMessage}",
         color: DashboardColors.statusCancelled,
       );
     }
     if (job.paymentStatus == 'refund_requested') {
-      return const _StatusNote(icon: Icons.hourglass_top, text: "Refund requested, waiting for admin review.", color: DashboardColors.accent);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _StatusNote(
+            icon: Icons.hourglass_top,
+            text:
+                "Refund requested — the worker has 3 days to respond before it's automatically refunded.",
+            color: DashboardColors.accent,
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => showJobDetailsSheet(context, job),
+            icon: const Icon(Icons.chat_bubble_outline, size: 16),
+            label: Text(
+              "View & Reply",
+              style: DashboardText.body(size: 13, weight: FontWeight.w600),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: DashboardColors.primary,
+              side: const BorderSide(color: DashboardColors.border),
+            ),
+          ),
+        ],
+      );
     }
     // Payment happens right after acceptance — before the worker can even
     // mark themselves 'arrived' (see verify_arrival_otp in schema.sql).
@@ -397,7 +627,11 @@ class _JobPaymentActionsState extends State<JobPaymentActions> {
           _receipt(),
           const SizedBox(height: 10),
           job.rating != null
-              ? const _StatusNote(icon: Icons.star, text: "You rated this job. Booking complete.", color: DashboardColors.accent)
+              ? const _StatusNote(
+                  icon: Icons.star,
+                  text: "You rated this job. Booking complete.",
+                  color: DashboardColors.accent,
+                )
               : _rateWorkerButton(),
         ],
       );
@@ -410,17 +644,26 @@ class _ReceiptLine extends StatelessWidget {
   final String label;
   final double value;
   final bool bold;
-  const _ReceiptLine({required this.label, required this.value, this.bold = false});
+  const _ReceiptLine({
+    required this.label,
+    required this.value,
+    this.bold = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final style = bold ? DashboardText.heading(size: 14, color: Colors.black87) : DashboardText.body(size: 12.5, color: Colors.black87);
+    final style = bold
+        ? DashboardText.heading(size: 14, color: Colors.black87)
+        : DashboardText.body(size: 12.5, color: Colors.black87);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: bold ? style : style.copyWith(color: DashboardColors.muted)),
+          Text(
+            label,
+            style: bold ? style : style.copyWith(color: DashboardColors.muted),
+          ),
           Text("₱${value.toStringAsFixed(0)}", style: style),
         ],
       ),
@@ -432,19 +675,35 @@ class _StatusNote extends StatelessWidget {
   final IconData icon;
   final String text;
   final Color color;
-  const _StatusNote({required this.icon, required this.text, required this.color});
+  const _StatusNote({
+    required this.icon,
+    required this.text,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Row(
         children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: DashboardText.body(size: 12, weight: FontWeight.w600, color: color))),
+          Expanded(
+            child: Text(
+              text,
+              style: DashboardText.body(
+                size: 12,
+                weight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -468,7 +727,10 @@ class EmptyActiveJobState extends StatelessWidget {
         children: [
           Icon(Icons.work_outline, size: 28, color: DashboardColors.muted),
           const SizedBox(height: 10),
-          Text("No active job right now", style: DashboardText.heading(size: 14, color: Colors.black87)),
+          Text(
+            "No active job right now",
+            style: DashboardText.heading(size: 14, color: Colors.black87),
+          ),
           const SizedBox(height: 4),
           Text(
             "Post a job to find a worker.",

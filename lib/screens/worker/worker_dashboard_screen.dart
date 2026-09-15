@@ -1330,7 +1330,8 @@ class _MyJobsTabState extends State<_MyJobsTab> {
         ),
         'refund_requested' => _infoNote(
           icon: Icons.report_gmailerrorred_outlined,
-          message: "The client requested a refund. Under admin review.",
+          message:
+              "The client requested a refund. Tap to respond — you have 3 days before it's automatically refunded.",
         ),
         'refunded' => _infoNote(
           icon: Icons.assignment_return_outlined,
