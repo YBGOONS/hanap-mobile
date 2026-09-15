@@ -189,6 +189,9 @@ class _ConversationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final initials = otherName.isNotEmpty ? otherName[0].toUpperCase() : "?";
     final preview = entry.lastMessage?.body ?? "No messages yet. Say hello.";
+    // Surfaces an open refund dispute here too, not just in notifications —
+    // once resolved it goes back to the normal last-message preview.
+    final hasOpenDispute = entry.job.paymentStatus == 'refund_requested';
     return ListTile(
       onTap: onTap,
       leading: CircleAvatar(
@@ -204,10 +207,18 @@ class _ConversationTile extends StatelessWidget {
         style: DashboardText.heading(size: 14, color: Colors.black87),
       ),
       subtitle: Text(
-        "${entry.job.category} · $preview",
+        hasOpenDispute
+            ? "Refund dispute · ${entry.job.category}"
+            : "${entry.job.category} · $preview",
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: DashboardText.body(size: 12, color: DashboardColors.muted),
+        style: DashboardText.body(
+          size: 12,
+          weight: hasOpenDispute ? FontWeight.w700 : FontWeight.w400,
+          color: hasOpenDispute
+              ? DashboardColors.accent
+              : DashboardColors.muted,
+        ),
       ),
       trailing: entry.unreadCount > 0
           ? Container(

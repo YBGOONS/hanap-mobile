@@ -3,6 +3,7 @@ import '../../main.dart';
 import '../../models/job.dart';
 import '../../models/message.dart';
 import '../../theme/dashboard_theme.dart';
+import '../../widgets/dashboard/dashboard_widgets.dart';
 
 /// One job's message thread. Streams live via Supabase Realtime (the
 /// `messages` table is added to the `supabase_realtime` publication in
@@ -28,7 +29,11 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _userId = supabase.auth.currentUser!.id;
-    _stream = supabase.from('messages').stream(primaryKey: ['id']).eq('job_id', widget.job.id).order('created_at');
+    _stream = supabase
+        .from('messages')
+        .stream(primaryKey: ['id'])
+        .eq('job_id', widget.job.id)
+        .order('created_at');
     _markRead();
   }
 
@@ -54,7 +59,11 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _sending = true);
     _bodyCtrl.clear();
     try {
-      await supabase.from('messages').insert({'job_id': widget.job.id, 'sender_id': _userId, 'body': body});
+      await supabase.from('messages').insert({
+        'job_id': widget.job.id,
+        'sender_id': _userId,
+        'body': body,
+      });
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -72,10 +81,27 @@ class _ChatScreenState extends State<ChatScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(widget.otherName, style: DashboardText.heading(size: 15, color: Colors.black87)),
-            Text(widget.job.category, style: DashboardText.body(size: 11, color: DashboardColors.muted)),
+            Text(
+              widget.otherName,
+              style: DashboardText.heading(size: 15, color: Colors.black87),
+            ),
+            Text(
+              widget.job.category,
+              style: DashboardText.body(size: 11, color: DashboardColors.muted),
+            ),
           ],
         ),
+        actions: [
+          if (widget.job.refundRequestedAt != null)
+            IconButton(
+              onPressed: () => showJobDetailsSheet(context, widget.job),
+              icon: const Icon(
+                Icons.report_gmailerrorred_outlined,
+                color: DashboardColors.accent,
+              ),
+              tooltip: "View Refund Dispute",
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -84,12 +110,24 @@ class _ChatScreenState extends State<ChatScreen> {
               stream: _stream,
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator(color: DashboardColors.primary));
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      color: DashboardColors.primary,
+                    ),
+                  );
                 }
-                final messages = snapshot.data!.map((m) => Message.fromMap(m)).toList();
+                final messages = snapshot.data!
+                    .map((m) => Message.fromMap(m))
+                    .toList();
                 if (messages.isEmpty) {
                   return Center(
-                    child: Text("Say hello to ${widget.otherName}.", style: DashboardText.body(size: 13, color: DashboardColors.muted)),
+                    child: Text(
+                      "Say hello to ${widget.otherName}.",
+                      style: DashboardText.body(
+                        size: 13,
+                        color: DashboardColors.muted,
+                      ),
+                    ),
                   );
                 }
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -97,7 +135,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     _scrollCtrl.jumpTo(_scrollCtrl.position.maxScrollExtent);
                   }
                 });
-                final lastMineIndex = messages.lastIndexWhere((m) => m.senderId == _userId);
+                final lastMineIndex = messages.lastIndexWhere(
+                  (m) => m.senderId == _userId,
+                );
                 return ListView.builder(
                   controller: _scrollCtrl,
                   padding: const EdgeInsets.all(16),
@@ -122,18 +162,27 @@ class _MessageBubble extends StatelessWidget {
   final Message message;
   final bool isMine;
   final bool showSeen;
-  const _MessageBubble({required this.message, required this.isMine, this.showSeen = false});
+  const _MessageBubble({
+    required this.message,
+    required this.isMine,
+    this.showSeen = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final time = "${message.createdAt.hour.toString().padLeft(2, '0')}:${message.createdAt.minute.toString().padLeft(2, '0')}";
+    final time =
+        "${message.createdAt.hour.toString().padLeft(2, '0')}:${message.createdAt.minute.toString().padLeft(2, '0')}";
     return Column(
-      crossAxisAlignment: isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: isMine
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         Align(
           alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
           child: Container(
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.72,
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: isMine ? DashboardColors.primary : Colors.white,
@@ -144,9 +193,21 @@ class _MessageBubble extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(message.body, style: DashboardText.body(size: 14, color: isMine ? Colors.white : Colors.black87)),
+                Text(
+                  message.body,
+                  style: DashboardText.body(
+                    size: 14,
+                    color: isMine ? Colors.white : Colors.black87,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(time, style: DashboardText.body(size: 10, color: isMine ? Colors.white70 : DashboardColors.muted)),
+                Text(
+                  time,
+                  style: DashboardText.body(
+                    size: 10,
+                    color: isMine ? Colors.white70 : DashboardColors.muted,
+                  ),
+                ),
               ],
             ),
           ),
@@ -154,7 +215,14 @@ class _MessageBubble extends StatelessWidget {
         if (showSeen)
           Padding(
             padding: const EdgeInsets.only(top: 3, right: 4),
-            child: Text("Seen", style: DashboardText.body(size: 10.5, weight: FontWeight.w600, color: DashboardColors.muted)),
+            child: Text(
+              "Seen",
+              style: DashboardText.body(
+                size: 10.5,
+                weight: FontWeight.w600,
+                color: DashboardColors.muted,
+              ),
+            ),
           ),
         const SizedBox(height: 10),
       ],
@@ -166,7 +234,11 @@ class _Composer extends StatelessWidget {
   final TextEditingController controller;
   final bool sending;
   final VoidCallback onSend;
-  const _Composer({required this.controller, required this.sending, required this.onSend});
+  const _Composer({
+    required this.controller,
+    required this.sending,
+    required this.onSend,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -174,7 +246,10 @@ class _Composer extends StatelessWidget {
       top: false,
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-        decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: DashboardColors.border))),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: DashboardColors.border)),
+        ),
         child: Row(
           children: [
             Expanded(
@@ -187,11 +262,20 @@ class _Composer extends StatelessWidget {
                 style: DashboardText.body(size: 14, color: Colors.black87),
                 decoration: InputDecoration(
                   hintText: "Type a message…",
-                  hintStyle: DashboardText.body(size: 14, color: DashboardColors.muted),
+                  hintStyle: DashboardText.body(
+                    size: 14,
+                    color: DashboardColors.muted,
+                  ),
                   filled: true,
                   fillColor: DashboardColors.bg,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
             ),
@@ -202,9 +286,18 @@ class _Composer extends StatelessWidget {
               child: Container(
                 width: 44,
                 height: 44,
-                decoration: const BoxDecoration(color: DashboardColors.accent, shape: BoxShape.circle),
+                decoration: const BoxDecoration(
+                  color: DashboardColors.accent,
+                  shape: BoxShape.circle,
+                ),
                 child: sending
-                    ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
                     : const Icon(Icons.send, color: Colors.white, size: 19),
               ),
             ),
