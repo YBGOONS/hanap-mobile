@@ -6,6 +6,7 @@ import '../../main.dart';
 import '../../models/categories.dart';
 import '../../models/certificate.dart';
 import '../../models/job.dart';
+import '../../models/work_photo.dart';
 import '../../theme/dashboard_theme.dart';
 import '../../utils/validators.dart';
 import '../../widgets/dashboard/dashboard_widgets.dart';
@@ -1968,15 +1969,22 @@ class _ProfileTab extends StatefulWidget {
 class _ProfileTabState extends State<_ProfileTab> {
   late Future<Map<String, dynamic>> _profileFuture;
   late Future<List<Certificate>> _certsFuture;
+  late Future<List<WorkPhoto>> _workPhotosFuture;
   final _locationCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
+  final _bioCtrl = TextEditingController();
+  final _yearsExpCtrl = TextEditingController();
+  final _rateCtrl = TextEditingController();
   Set<String> _selectedSkills = {};
   bool _uploadingAvatar = false;
   bool _savingLocation = false;
   bool _savingSkills = false;
   bool _uploadingCert = false;
   String? _deletingCertId;
+  String? _savingCertId;
+  bool _uploadingPhoto = false;
+  String? _deletingPhotoId;
   String? _locationError;
   String? _locationSuccess;
   String? _skillsSuccess;
@@ -1999,6 +2007,7 @@ class _ProfileTabState extends State<_ProfileTab> {
     super.initState();
     _profileFuture = _loadProfile();
     _certsFuture = _loadCertificates();
+    _workPhotosFuture = _loadWorkPhotos();
   }
 
   Future<List<Certificate>> _loadCertificates() async {
@@ -2093,11 +2102,145 @@ class _ProfileTabState extends State<_ProfileTab> {
     }
   }
 
+  Future<void> _editCertificate(Certificate cert) async {
+    final input = await showEditCertificateDialog(
+      context,
+      initialTitle: cert.title,
+      initialIssuer: cert.issuer ?? '',
+    );
+    if (input == null || !mounted) return;
+
+    setState(() => _savingCertId = cert.id);
+    try {
+      await supabase
+          .from('certificates')
+          .update({
+            'title': input.title,
+            'issuer': input.issuer.isEmpty ? null : input.issuer,
+          })
+          .eq('id', cert.id);
+      if (!mounted) return;
+      setState(() {
+        _savingCertId = null;
+        _certsFuture = _loadCertificates();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _savingCertId = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't save that. Try again.")),
+      );
+    }
+  }
+
+  Future<List<WorkPhoto>> _loadWorkPhotos() async {
+    final userId = supabase.auth.currentUser!.id;
+    final rows = await supabase
+        .from('work_photos')
+        .select()
+        .eq('worker_id', userId)
+        .order('created_at', ascending: false);
+    return (rows as List)
+        .map((r) => WorkPhoto.fromMap(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> _addWorkPhoto() async {
+    final current = await _workPhotosFuture;
+    if (!mounted) return;
+    if (current.length >= 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("You can upload up to 10 work photos.")),
+      );
+      return;
+    }
+
+    final input = await showAddWorkPhotoDialog(context);
+    if (input == null || !mounted) return;
+
+    final bytes = input.file.bytes;
+    if (bytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Could not read that file. Please try again."),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _uploadingPhoto = true);
+    try {
+      final userId = supabase.auth.currentUser!.id;
+      final ext = (input.file.extension ?? 'jpg').toLowerCase();
+      final path =
+          '$userId/${DateTime.now().millisecondsSinceEpoch}_${input.file.name.split('.').first}.$ext';
+
+      await supabase.storage
+          .from('work-gallery')
+          .uploadBinary(path, bytes, fileOptions: const FileOptions());
+
+      await supabase.from('work_photos').insert({
+        'worker_id': userId,
+        'caption': input.caption,
+        'photo_path': path,
+      });
+
+      if (!mounted) return;
+      setState(() {
+        _uploadingPhoto = false;
+        _workPhotosFuture = _loadWorkPhotos();
+      });
+    } on StorageException catch (e) {
+      if (!mounted) return;
+      setState(() => _uploadingPhoto = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _uploadingPhoto = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Upload failed. Please try again.")),
+      );
+    }
+  }
+
+  Future<void> _deleteWorkPhoto(WorkPhoto photo) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: "Remove this photo?",
+      message: "This will be removed from your Work Gallery.",
+      confirmLabel: "Remove",
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _deletingPhotoId = photo.id);
+    try {
+      await supabase.from('work_photos').delete().eq('id', photo.id);
+      await supabase.storage.from('work-gallery').remove([photo.photoPath]);
+      if (!mounted) return;
+      setState(() {
+        _deletingPhotoId = null;
+        _workPhotosFuture = _loadWorkPhotos();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _deletingPhotoId = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't remove that. Try again.")),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _locationCtrl.dispose();
     _phoneCtrl.dispose();
     _usernameCtrl.dispose();
+    _bioCtrl.dispose();
+    _yearsExpCtrl.dispose();
+    _rateCtrl.dispose();
     _currentPassCtrl.dispose();
     _newPassCtrl.dispose();
     _confirmPassCtrl.dispose();
@@ -2115,6 +2258,9 @@ class _ProfileTabState extends State<_ProfileTab> {
     _phoneCtrl.text = row['phone'] as String? ?? '';
     _usernameCtrl.text = row['username'] as String? ?? '';
     _originalUsername = row['username'] as String?;
+    _bioCtrl.text = row['bio'] as String? ?? '';
+    _yearsExpCtrl.text = (row['years_experience'] as num?)?.toString() ?? '';
+    _rateCtrl.text = row['rate'] as String? ?? '';
     _selectedSkills = ((row['skills'] as List?)?.cast<String>() ?? const [])
         .toSet();
     return row;
@@ -2195,6 +2341,14 @@ class _ProfileTabState extends State<_ProfileTab> {
       );
       return;
     }
+    final yearsExpText = _yearsExpCtrl.text.trim();
+    final yearsExp = yearsExpText.isEmpty ? null : int.tryParse(yearsExpText);
+    if (yearsExpText.isNotEmpty && (yearsExp == null || yearsExp < 0)) {
+      setState(
+        () => _locationError = "Years of experience must be a whole number.",
+      );
+      return;
+    }
     setState(() {
       _savingLocation = true;
       _locationError = null;
@@ -2202,9 +2356,14 @@ class _ProfileTabState extends State<_ProfileTab> {
     });
     try {
       final userId = supabase.auth.currentUser!.id;
+      final bio = _bioCtrl.text.trim();
+      final rate = _rateCtrl.text.trim();
       final update = {
         'location': location,
         'phone': phone,
+        'bio': bio.isEmpty ? null : bio,
+        'years_experience': yearsExp,
+        'rate': rate.isEmpty ? null : rate,
         if (settingUsername) 'username': username,
       };
       await supabase.from('profiles').update(update).eq('id', userId);
@@ -2513,6 +2672,65 @@ class _ProfileTabState extends State<_ProfileTab> {
                         hint: "09XX XXX XXXX",
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _bioCtrl,
+                      maxLines: 3,
+                      onChanged: (_) => setState(() {
+                        _locationError = null;
+                        _locationSuccess = null;
+                      }),
+                      style: DashboardText.body(
+                        size: 14,
+                        color: Colors.black87,
+                      ),
+                      decoration: dashboardInputDecoration(
+                        label: "Bio",
+                        hint: "Ano ang ginagawa mo? (2-3 sentences)",
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _yearsExpCtrl,
+                            keyboardType: TextInputType.number,
+                            onChanged: (_) => setState(() {
+                              _locationError = null;
+                              _locationSuccess = null;
+                            }),
+                            style: DashboardText.body(
+                              size: 14,
+                              color: Colors.black87,
+                            ),
+                            decoration: dashboardInputDecoration(
+                              label: "Years of Experience",
+                              hint: "e.g. 5",
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _rateCtrl,
+                            onChanged: (_) => setState(() {
+                              _locationError = null;
+                              _locationSuccess = null;
+                            }),
+                            style: DashboardText.body(
+                              size: 14,
+                              color: Colors.black87,
+                            ),
+                            decoration: dashboardInputDecoration(
+                              label: "Rate",
+                              hint: "e.g. ₱500/day",
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     if (_locationError != null) ...[
                       const SizedBox(height: 8),
                       Text(
@@ -2693,7 +2911,7 @@ class _ProfileTabState extends State<_ProfileTab> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                "Portfolio",
+                                "Work Gallery",
                                 style: DashboardText.body(
                                   size: 12,
                                   weight: FontWeight.w700,
@@ -2702,7 +2920,199 @@ class _ProfileTabState extends State<_ProfileTab> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                "Certificates and credentials clients see on your profile.",
+                                "Photos of finished jobs clients see on your profile. Up to 10.",
+                                style: DashboardText.body(
+                                  size: 12,
+                                  color: DashboardColors.muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: _uploadingPhoto ? null : _addWorkPhoto,
+                          icon: _uploadingPhoto
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.add, size: 16),
+                          label: Text(
+                            "Add",
+                            style: DashboardText.body(
+                              size: 13,
+                              weight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    FutureBuilder<List<WorkPhoto>>(
+                      future: _workPhotosFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            !snapshot.hasData) {
+                          return const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Center(
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: DashboardColors.primary,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        final photos = snapshot.data ?? [];
+                        if (photos.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              "No photos yet. Add pictures of your finished jobs so clients can see your work.",
+                              style: DashboardText.body(
+                                size: 12,
+                                color: DashboardColors.muted,
+                              ),
+                            ),
+                          );
+                        }
+                        return Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: photos.map((photo) {
+                            final url = supabase.storage
+                                .from('work-gallery')
+                                .getPublicUrl(photo.photoPath);
+                            return SizedBox(
+                              width: 100,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Stack(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          url,
+                                          width: 100,
+                                          height: 100,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, _, _) => Container(
+                                            width: 100,
+                                            height: 100,
+                                            color: DashboardColors.border,
+                                            child: const Icon(
+                                              Icons.broken_image_outlined,
+                                              size: 20,
+                                              color: DashboardColors.muted,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 4,
+                                        right: 4,
+                                        child: _deletingPhotoId == photo.id
+                                            ? Container(
+                                                width: 20,
+                                                height: 20,
+                                                padding: const EdgeInsets.all(
+                                                  3,
+                                                ),
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.black45,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child:
+                                                    const CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: Colors.white,
+                                                    ),
+                                              )
+                                            : InkWell(
+                                                onTap: () =>
+                                                    _deleteWorkPhoto(photo),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(
+                                                    3,
+                                                  ),
+                                                  decoration:
+                                                      const BoxDecoration(
+                                                        color: Colors.black45,
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                  child: const Icon(
+                                                    Icons.close,
+                                                    size: 13,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (photo.caption != null &&
+                                      photo.caption!.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      photo.caption!,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: DashboardText.body(
+                                        size: 11,
+                                        color: DashboardColors.muted,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: DashboardColors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Certifications",
+                                style: DashboardText.body(
+                                  size: 12,
+                                  weight: FontWeight.w700,
+                                  color: DashboardColors.muted,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                "TESDA NC or training certificates clients see on your profile.",
                                 style: DashboardText.body(
                                   size: 12,
                                   color: DashboardColors.muted,
@@ -2842,7 +3252,8 @@ class _ProfileTabState extends State<_ProfileTab> {
                                       ],
                                     ),
                                   ),
-                                  _deletingCertId == cert.id
+                                  (_deletingCertId == cert.id ||
+                                          _savingCertId == cert.id)
                                       ? const SizedBox(
                                           width: 16,
                                           height: 16,
@@ -2850,17 +3261,37 @@ class _ProfileTabState extends State<_ProfileTab> {
                                             strokeWidth: 2,
                                           ),
                                         )
-                                      : IconButton(
-                                          onPressed: () =>
-                                              _deleteCertificate(cert),
-                                          icon: const Icon(
-                                            Icons.delete_outline,
-                                            size: 18,
-                                            color: Color(0xFFC62828),
-                                          ),
-                                          tooltip: "Remove",
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
+                                      : Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              onPressed: () =>
+                                                  _editCertificate(cert),
+                                              icon: const Icon(
+                                                Icons.edit_outlined,
+                                                size: 17,
+                                                color: DashboardColors.muted,
+                                              ),
+                                              tooltip: "Edit",
+                                              padding: EdgeInsets.zero,
+                                              constraints:
+                                                  const BoxConstraints(),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            IconButton(
+                                              onPressed: () =>
+                                                  _deleteCertificate(cert),
+                                              icon: const Icon(
+                                                Icons.delete_outline,
+                                                size: 18,
+                                                color: Color(0xFFC62828),
+                                              ),
+                                              tooltip: "Remove",
+                                              padding: EdgeInsets.zero,
+                                              constraints:
+                                                  const BoxConstraints(),
+                                            ),
+                                          ],
                                         ),
                                 ],
                               ),

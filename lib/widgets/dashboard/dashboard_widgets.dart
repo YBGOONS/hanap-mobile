@@ -638,6 +638,215 @@ showAddCertificateDialog(BuildContext context) {
   );
 }
 
+/// Edits an existing certificate's title/issuer — not the uploaded file
+/// itself, re-uploading is delete + add again, see
+/// [showAddCertificateDialog].
+Future<({String title, String issuer})?> showEditCertificateDialog(
+  BuildContext context, {
+  required String initialTitle,
+  required String initialIssuer,
+}) {
+  final titleCtrl = TextEditingController(text: initialTitle);
+  final issuerCtrl = TextEditingController(text: initialIssuer);
+  return showDialog<({String title, String issuer})>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (dialogContext, setState) {
+          final canSubmit = titleCtrl.text.trim().isNotEmpty;
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            title: Text(
+              "Edit Certificate",
+              style: DashboardText.heading(size: 17, color: Colors.black87),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: titleCtrl,
+                  autofocus: true,
+                  style: DashboardText.body(size: 14, color: Colors.black87),
+                  decoration: dashboardInputDecoration(label: "Title"),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: issuerCtrl,
+                  style: DashboardText.body(size: 14, color: Colors.black87),
+                  decoration: dashboardInputDecoration(
+                    label: "Issuer (optional)",
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(
+                  "Cancel",
+                  style: DashboardText.body(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: DashboardColors.muted,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: canSubmit
+                    ? () => Navigator.of(dialogContext).pop((
+                        title: titleCtrl.text.trim(),
+                        issuer: issuerCtrl.text.trim(),
+                      ))
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DashboardColors.accent,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text(
+                  "Save",
+                  style: DashboardText.body(size: 14, weight: FontWeight.w700),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+/// Collects a caption + image for a new work-gallery photo. Only collects
+/// the input — the caller uploads the file and inserts the row, same
+/// division of labor as [showAddCertificateDialog].
+Future<({String caption, PlatformFile file})?> showAddWorkPhotoDialog(
+  BuildContext context,
+) {
+  final captionCtrl = TextEditingController();
+  PlatformFile? file;
+  return showDialog<({String caption, PlatformFile file})>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (dialogContext, setState) {
+          final canSubmit = captionCtrl.text.trim().isNotEmpty && file != null;
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            title: Text(
+              "Add Work Photo",
+              style: DashboardText.heading(size: 17, color: Colors.black87),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                InkWell(
+                  onTap: () async {
+                    final result = await FilePicker.platform.pickFiles(
+                      type: FileType.custom,
+                      allowedExtensions: ['jpg', 'jpeg', 'png'],
+                      withData: true,
+                    );
+                    if (result != null && result.files.isNotEmpty) {
+                      setState(() => file = result.files.first);
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: file != null
+                          ? DashboardColors.primary.withValues(alpha: 0.06)
+                          : DashboardColors.border.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: file != null
+                            ? DashboardColors.primary
+                            : DashboardColors.border,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          file != null
+                              ? Icons.check_circle
+                              : Icons.add_a_photo_outlined,
+                          size: 18,
+                          color: file != null
+                              ? DashboardColors.primary
+                              : DashboardColors.muted,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            file?.name ?? "Choose photo (JPG, PNG)",
+                            overflow: TextOverflow.ellipsis,
+                            style: DashboardText.body(
+                              size: 13,
+                              weight: file != null
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              color: file != null
+                                  ? Colors.black87
+                                  : DashboardColors.muted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: captionCtrl,
+                  style: DashboardText.body(size: 14, color: Colors.black87),
+                  decoration: dashboardInputDecoration(
+                    label: "Caption",
+                    hint: "Concrete fence, Malolos, 2025",
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(
+                  "Cancel",
+                  style: DashboardText.body(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: DashboardColors.muted,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: canSubmit
+                    ? () => Navigator.of(
+                        dialogContext,
+                      ).pop((caption: captionCtrl.text.trim(), file: file!))
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DashboardColors.accent,
+                  foregroundColor: Colors.white,
+                ),
+                child: Text(
+                  "Add",
+                  style: DashboardText.body(size: 14, weight: FontWeight.w700),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
 /// Collects an amount + GCash number for a worker's cash-out request. Only
 /// collects the input — the caller calls the `request_cashout` RPC and
 /// refreshes, same division of labor as [showReasonDialog]. Prefills the

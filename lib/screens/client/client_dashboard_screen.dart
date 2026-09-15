@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../main.dart';
 import '../../models/certificate.dart';
 import '../../models/job.dart';
+import '../../models/work_photo.dart';
 import '../../theme/dashboard_theme.dart';
 import '../../utils/formatters.dart';
 import '../../utils/validators.dart';
@@ -1424,6 +1425,7 @@ class _WorkerDetailsSheet extends StatefulWidget {
 class _WorkerDetailsSheetState extends State<_WorkerDetailsSheet> {
   late final Future<List<Map<String, dynamic>>> _ratingsFuture = _loadRatings();
   late final Future<List<Certificate>> _certsFuture = _loadCertificates();
+  late final Future<List<WorkPhoto>> _workPhotosFuture = _loadWorkPhotos();
 
   Future<List<Map<String, dynamic>>> _loadRatings() async {
     final rows = await supabase
@@ -1445,6 +1447,17 @@ class _WorkerDetailsSheetState extends State<_WorkerDetailsSheet> {
         .toList();
   }
 
+  Future<List<WorkPhoto>> _loadWorkPhotos() async {
+    final rows = await supabase
+        .from('work_photos')
+        .select()
+        .eq('worker_id', widget.worker['id'] as String)
+        .order('created_at', ascending: false);
+    return (rows as List)
+        .map((r) => WorkPhoto.fromMap(r as Map<String, dynamic>))
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final worker = widget.worker;
@@ -1458,6 +1471,9 @@ class _WorkerDetailsSheetState extends State<_WorkerDetailsSheet> {
     final location = worker['location'] as String? ?? '—';
     final available = worker['available'] as bool? ?? false;
     final skills = (worker['skills'] as List?)?.cast<String>() ?? const [];
+    final bio = worker['bio'] as String?;
+    final yearsExperience = worker['years_experience'] as num?;
+    final rate = worker['rate'] as String?;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.75,
@@ -1548,6 +1564,29 @@ class _WorkerDetailsSheetState extends State<_WorkerDetailsSheet> {
               ),
               const SizedBox(height: 20),
               _MetaText(icon: Icons.location_on_outlined, text: location),
+              if (yearsExperience != null || (rate?.isNotEmpty ?? false)) ...[
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 6,
+                  children: [
+                    if (yearsExperience != null)
+                      _MetaText(
+                        icon: Icons.work_history_outlined,
+                        text: "${yearsExperience.toInt()} yrs experience",
+                      ),
+                    if (rate != null && rate.isNotEmpty)
+                      _MetaText(icon: Icons.payments_outlined, text: rate),
+                  ],
+                ),
+              ],
+              if (bio != null && bio.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  bio,
+                  style: DashboardText.body(size: 13, color: Colors.black87),
+                ),
+              ],
               if (skills.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -1581,6 +1620,90 @@ class _WorkerDetailsSheetState extends State<_WorkerDetailsSheet> {
                       .toList(),
                 ),
               ],
+              const SizedBox(height: 20),
+              Text(
+                "Work Gallery",
+                style: DashboardText.heading(size: 13, color: Colors.black87),
+              ),
+              const SizedBox(height: 8),
+              FutureBuilder<List<WorkPhoto>>(
+                future: _workPhotosFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: DashboardColors.primary,
+                        ),
+                      ),
+                    );
+                  }
+                  final photos = snapshot.data ?? [];
+                  if (photos.isEmpty) {
+                    return Text(
+                      "No photos uploaded yet.",
+                      style: DashboardText.body(
+                        size: 12,
+                        color: DashboardColors.muted,
+                      ),
+                    );
+                  }
+                  return Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: photos.map((photo) {
+                      final url = supabase.storage
+                          .from('work-gallery')
+                          .getPublicUrl(photo.photoPath);
+                      return SizedBox(
+                        width: 100,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(
+                                url,
+                                width: 100,
+                                height: 100,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Container(
+                                  width: 100,
+                                  height: 100,
+                                  color: DashboardColors.border,
+                                  child: const Icon(
+                                    Icons.broken_image_outlined,
+                                    size: 20,
+                                    color: DashboardColors.muted,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (photo.caption != null &&
+                                photo.caption!.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                photo.caption!,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: DashboardText.body(
+                                  size: 11,
+                                  color: DashboardColors.muted,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
               const SizedBox(height: 20),
               Text(
                 "Certificates",

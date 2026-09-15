@@ -20,6 +20,9 @@ create table public.profiles (
   skills text[], -- workers can have more than one; register screen writes a single-element array for now
   available boolean not null default true, -- worker's "open for jobs" toggle
   avatar_url text,
+  bio text, -- short "what I do" blurb shown on the worker's public profile
+  years_experience smallint,
+  rate text, -- worker-quoted rate, e.g. "₱500/day" — free-form, not tied to any job's budget
   -- Required at signup going forward; nullable only because existing accounts
   -- from before this feature don't have one yet — they set it once from
   -- Profile settings, then protect_profile_fields_trigger below locks it for
@@ -906,7 +909,7 @@ create table public.certificates (
 );
 
 alter table public.certificates enable row level security;
-grant select, insert, delete on public.certificates to authenticated;
+grant select, insert, update, delete on public.certificates to authenticated;
 create index certificates_worker_id_idx on public.certificates (worker_id);
 
 create policy "certificates_select_all"
@@ -921,6 +924,14 @@ create policy "certificates_insert_own"
     worker_id = auth.uid()
     and exists (select 1 from public.profiles where id = auth.uid() and role = 'worker')
   );
+
+-- Metadata-only edit (title/issuer) — re-uploading the file itself is just
+-- delete + add again, same as certificates_insert_own/delete_own above.
+create policy "certificates_update_own"
+  on public.certificates for update
+  to authenticated
+  using (worker_id = auth.uid())
+  with check (worker_id = auth.uid());
 
 create policy "certificates_delete_own"
   on public.certificates for delete
@@ -946,6 +957,64 @@ create policy "certificates_delete_own_folder"
   to authenticated
   using (
     bucket_id = 'certificates'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- ── WORK GALLERY (worker portfolio) ─────────────────────────────────────
+-- Photos of a worker's finished jobs with a short caption each — same
+-- ownership/visibility model as certificates above (public read, worker
+-- manages their own rows via plain RLS, no RPC needed). The app caps this
+-- at 10 photos per worker client-side; nothing here enforces that limit.
+
+create table public.work_photos (
+  id uuid primary key default gen_random_uuid(),
+  worker_id uuid not null references public.profiles (id) on delete cascade,
+  photo_path text not null, -- storage path in the work-gallery bucket
+  caption text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.work_photos enable row level security;
+grant select, insert, delete on public.work_photos to authenticated;
+create index work_photos_worker_id_idx on public.work_photos (worker_id);
+
+create policy "work_photos_select_all"
+  on public.work_photos for select
+  to authenticated
+  using (true);
+
+create policy "work_photos_insert_own"
+  on public.work_photos for insert
+  to authenticated
+  with check (
+    worker_id = auth.uid()
+    and exists (select 1 from public.profiles where id = auth.uid() and role = 'worker')
+  );
+
+create policy "work_photos_delete_own"
+  on public.work_photos for delete
+  to authenticated
+  using (worker_id = auth.uid());
+
+-- Public bucket (like avatars/certificates) — a work photo is meant to be
+-- seen by clients checking a worker's profile.
+insert into storage.buckets (id, name, public)
+values ('work-gallery', 'work-gallery', true)
+on conflict (id) do nothing;
+
+create policy "work_gallery_upload_own_folder"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'work-gallery'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "work_gallery_delete_own_folder"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'work-gallery'
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 
