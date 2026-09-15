@@ -1346,6 +1346,28 @@ create policy "refund_evidence_admin_reads_all"
     and exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
   );
 
+-- The two policies above only ever let the *uploader* (or admin) read a
+-- file back — there was no rule letting the *other side* of a dispute see
+-- each other's evidence, so a worker could never open the client's report
+-- photo (and vice versa) even though the dispute UI links to it. This
+-- doesn't need the job id embedded in the file path: it just checks that
+-- the viewer and the file's folder-owner are the client/worker pair of
+-- some job that has (or had) a refund dispute.
+create policy "refund_evidence_read_dispute_participants"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'refund-evidence'
+    and exists (
+      select 1 from public.jobs j
+      where j.refund_requested_at is not null
+        and (
+          (j.client_id = auth.uid() and j.worker_id::text = (storage.foldername(name))[1])
+          or (j.worker_id = auth.uid() and j.client_id::text = (storage.foldername(name))[1])
+        )
+    )
+  );
+
 -- ── STORAGE: completion photos (deprecated/unused) ──────────────────────
 -- Kept for backward compatibility with any already-uploaded rows; the
 -- worker completion flow no longer requires or collects photos (only the
