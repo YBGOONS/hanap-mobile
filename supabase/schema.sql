@@ -1313,6 +1313,22 @@ create policy "avatars_update_own_folder"
     and (storage.foldername(name))[1] = auth.uid()::text
   );
 
+-- The avatar upload re-uploads to the same path with upsert:true (so
+-- switching photos doesn't pile up orphaned files) — that's an INSERT ...
+-- ON CONFLICT DO UPDATE under the hood, which needs the uploader to be
+-- able to SELECT their own existing row to resolve the conflict, or it
+-- fails with "new row violates row-level security policy" even though the
+-- insert/update policies above are individually correct. Doesn't affect
+-- how avatars are displayed elsewhere — getPublicUrl() serves the public
+-- bucket directly and never goes through this RLS at all.
+create policy "avatars_read_own_file"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
 -- ── STORAGE: refund evidence ────────────────────────────────────────────
 -- Private bucket, same {user_id}/<filename> convention — a client's refund
 -- photo is dispute evidence, not something other users should browse.
