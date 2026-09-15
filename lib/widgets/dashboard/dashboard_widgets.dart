@@ -1,7 +1,11 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../main.dart';
 import '../../models/job.dart';
+import '../../models/refund_message.dart';
 import '../../models/weather_info.dart';
 import '../../services/weather_service.dart';
 import '../../theme/dashboard_theme.dart';
@@ -1649,6 +1653,8 @@ void showJobDetailsSheet(BuildContext context, Job job) {
                     ),
                   ],
                 ],
+                if (job.refundRequestedAt != null)
+                  RefundDisputeThread(job: job),
               ],
             ),
           );
@@ -1656,4 +1662,510 @@ void showJobDetailsSheet(BuildContext context, Job job) {
       );
     },
   );
+}
+
+String _refundDeadlineLabel(DateTime requestedAt) {
+  final remaining = requestedAt
+      .add(const Duration(days: 3))
+      .difference(DateTime.now());
+  if (remaining.isNegative) {
+    return "Response window closed — awaiting automatic resolution.";
+  }
+  final days = remaining.inHours ~/ 24;
+  if (days < 1) return "Less than a day left for the worker to respond.";
+  return "$days day${days == 1 ? '' : 's'} left for the worker to respond.";
+}
+
+/// Client/worker/admin conversation on a refund dispute. The client's
+/// original report (reason + evidence + a response countdown) is read
+/// straight off [job]; the back-and-forth underneath comes from
+/// refund_messages. Admin can only reply once the worker has sent their
+/// own message here — enforced server-side by post_refund_message(), this
+/// widget just hides the composer for a not-yet-eligible admin to match,
+/// per the review flow: Client reports → Worker has 3 days to respond →
+/// only then does Admin mediate.
+class RefundDisputeThread extends StatefulWidget {
+  final Job job;
+  const RefundDisputeThread({super.key, required this.job});
+
+  @override
+  State<RefundDisputeThread> createState() => _RefundDisputeThreadState();
+}
+
+class _RefundDisputeThreadState extends State<RefundDisputeThread> {
+  late Future<List<RefundMessage>> _messagesFuture;
+  final _replyCtrl = TextEditingController();
+  PlatformFile? _evidenceFile;
+  bool _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _messagesFuture = _load();
+  }
+
+  @override
+  void dispose() {
+    _replyCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<List<RefundMessage>> _load() async {
+    final rows = await supabase
+        .from('refund_messages')
+        .select(
+          '*, sender:profiles!refund_messages_sender_id_fkey(first_name,last_name,role)',
+        )
+        .eq('job_id', widget.job.id)
+        .order('created_at');
+    return (rows as List)
+        .map((r) => RefundMessage.fromMap(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> _send() async {
+    final body = _replyCtrl.text.trim();
+    if (body.isEmpty) return;
+    setState(() => _sending = true);
+    try {
+      String? evidencePath;
+      final file = _evidenceFile;
+      final bytes = file?.bytes;
+      if (file != null && bytes != null) {
+        final userId = supabase.auth.currentUser!.id;
+        final ext = (file.extension ?? 'jpg').toLowerCase();
+        evidencePath = '$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+        await supabase.storage
+            .from('refund-evidence')
+            .uploadBinary(
+              evidencePath,
+              bytes,
+              fileOptions: const FileOptions(),
+            );
+      }
+      await supabase.rpc(
+        'post_refund_message',
+        params: {
+          'p_job_id': widget.job.id,
+          'p_body': body,
+          'p_evidence_path': evidencePath,
+        },
+      );
+      if (!mounted) return;
+      _replyCtrl.clear();
+      setState(() {
+        _sending = false;
+        _evidenceFile = null;
+        _messagesFuture = _load();
+      });
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Couldn't send that. Try again.")),
+      );
+    }
+  }
+
+  Future<void> _viewEvidence(String path) async {
+    final url = await supabase.storage
+        .from('refund-evidence')
+        .createSignedUrl(path, 60 * 10);
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _pickEvidence() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png'],
+      withData: true,
+    );
+    if (result != null && result.files.isNotEmpty) {
+      setState(() => _evidenceFile = result.files.first);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final job = widget.job;
+    final userId = supabase.auth.currentUser?.id;
+    final isParticipant = userId == job.clientId || userId == job.workerId;
+    final isOpen = job.paymentStatus == 'refund_requested';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 20),
+        const Divider(height: 1, color: DashboardColors.border),
+        const SizedBox(height: 20),
+        Text(
+          "Refund Dispute",
+          style: DashboardText.heading(size: 15, color: Colors.black87),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: DashboardColors.bg,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.flag_outlined,
+                    size: 15,
+                    color: DashboardColors.muted,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    "Client's report",
+                    style: DashboardText.body(
+                      size: 12,
+                      weight: FontWeight.w700,
+                      color: DashboardColors.muted,
+                    ),
+                  ),
+                ],
+              ),
+              if (job.refundReason != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  job.refundReason!,
+                  style: DashboardText.body(size: 13, color: Colors.black87),
+                ),
+              ],
+              if (job.refundPhotoUrl != null) ...[
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: () => _viewEvidence(job.refundPhotoUrl!),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.image_outlined,
+                        size: 14,
+                        color: DashboardColors.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        "View evidence photo",
+                        style: DashboardText.body(
+                          size: 12,
+                          weight: FontWeight.w600,
+                          color: DashboardColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (isOpen && job.refundRequestedAt != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _refundDeadlineLabel(job.refundRequestedAt!),
+                  style: DashboardText.body(
+                    size: 11.5,
+                    weight: FontWeight.w600,
+                    color: DashboardColors.accent,
+                  ),
+                ),
+              ],
+              if (!isOpen && job.refundAdminMessage != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  job.refundAdminMessage!,
+                  style: DashboardText.body(
+                    size: 12,
+                    color: DashboardColors.muted,
+                  ).copyWith(fontStyle: FontStyle.italic),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        FutureBuilder<List<RefundMessage>>(
+          future: _messagesFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: DashboardColors.primary,
+                  ),
+                ),
+              );
+            }
+            final messages = snapshot.data ?? [];
+            final workerReplied = messages.any(
+              (m) => m.senderId == job.workerId,
+            );
+            final canReply = isOpen && (isParticipant || workerReplied);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final m in messages)
+                  _RefundMessageBubble(
+                    message: m,
+                    isMine: m.senderId == userId,
+                    onViewEvidence: _viewEvidence,
+                  ),
+                if (messages.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      "No replies yet.",
+                      style: DashboardText.body(
+                        size: 12,
+                        color: DashboardColors.muted,
+                      ),
+                    ),
+                  ),
+                if (canReply)
+                  _ReplyComposer(
+                    controller: _replyCtrl,
+                    evidenceFile: _evidenceFile,
+                    sending: _sending,
+                    onPickEvidence: _pickEvidence,
+                    onSend: _send,
+                  )
+                else if (isOpen && !isParticipant && !workerReplied)
+                  Text(
+                    "Waiting for the worker to respond before Admin can join.",
+                    style: DashboardText.body(
+                      size: 12,
+                      color: DashboardColors.muted,
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _RefundMessageBubble extends StatelessWidget {
+  final RefundMessage message;
+  final bool isMine;
+  final void Function(String path) onViewEvidence;
+  const _RefundMessageBubble({
+    required this.message,
+    required this.isMine,
+    required this.onViewEvidence,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isAdmin = message.isFromAdmin;
+    final bg = isAdmin
+        ? DashboardColors.accent.withValues(alpha: 0.12)
+        : (isMine
+              ? DashboardColors.primary.withValues(alpha: 0.08)
+              : DashboardColors.bg);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: isAdmin
+            ? Border.all(color: DashboardColors.accent.withValues(alpha: 0.4))
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (isAdmin) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: DashboardColors.accent,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    "HANAP ADMIN",
+                    style: DashboardText.body(
+                      size: 9.5,
+                      weight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Expanded(
+                child: Text(
+                  message.senderName ?? (isAdmin ? "Admin" : "User"),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: DashboardText.body(
+                    size: 12,
+                    weight: FontWeight.w700,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+              Text(
+                _detailDate(message.createdAt),
+                style: DashboardText.body(
+                  size: 10.5,
+                  color: DashboardColors.muted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            message.body,
+            style: DashboardText.body(size: 13, color: Colors.black87),
+          ),
+          if (message.evidencePath != null) ...[
+            const SizedBox(height: 6),
+            InkWell(
+              onTap: () => onViewEvidence(message.evidencePath!),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.attach_file,
+                    size: 13,
+                    color: DashboardColors.primary,
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    "View attached evidence",
+                    style: DashboardText.body(
+                      size: 11.5,
+                      weight: FontWeight.w600,
+                      color: DashboardColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReplyComposer extends StatelessWidget {
+  final TextEditingController controller;
+  final PlatformFile? evidenceFile;
+  final bool sending;
+  final VoidCallback onPickEvidence;
+  final VoidCallback onSend;
+  const _ReplyComposer({
+    required this.controller,
+    required this.evidenceFile,
+    required this.sending,
+    required this.onPickEvidence,
+    required this.onSend,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (evidenceFile != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.check_circle,
+                  size: 14,
+                  color: DashboardColors.primary,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    evidenceFile!.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: DashboardText.body(
+                      size: 11.5,
+                      color: DashboardColors.muted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            IconButton(
+              onPressed: sending ? null : onPickEvidence,
+              icon: Icon(
+                Icons.attach_file,
+                size: 20,
+                color: evidenceFile != null
+                    ? DashboardColors.primary
+                    : DashboardColors.muted,
+              ),
+              tooltip: "Attach evidence photo",
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            ),
+            Expanded(
+              child: TextField(
+                controller: controller,
+                minLines: 1,
+                maxLines: 4,
+                enabled: !sending,
+                style: DashboardText.body(size: 13, color: Colors.black87),
+                decoration: dashboardInputDecoration(
+                  label: "Reply",
+                  hint: "Type your message...",
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            sending
+                ? const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : IconButton(
+                    onPressed: onSend,
+                    icon: const Icon(
+                      Icons.send,
+                      size: 20,
+                      color: DashboardColors.primary,
+                    ),
+                    tooltip: "Send",
+                  ),
+          ],
+        ),
+      ],
+    );
+  }
 }

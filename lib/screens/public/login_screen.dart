@@ -138,6 +138,17 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
+      if (status == 'suspended') {
+        await supabase.auth.signOut();
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _error =
+              "Your account has been suspended. Contact support for details.";
+        });
+        return;
+      }
+
       if (role == 'admin' && !kIsWeb) {
         // Admin's sidebar layout only makes sense on a wide/web viewport —
         // see supabase/schema.sql for why the 'admin' role can't be

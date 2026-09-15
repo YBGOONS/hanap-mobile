@@ -133,6 +133,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
         return;
       }
 
+      // Blocks re-registering under a new email to dodge a suspension —
+      // the phone number is still the same.
+      final phoneSuspended = await supabase.rpc(
+        'is_phone_suspended',
+        params: {'p_phone': _phoneCtrl.text.trim()},
+      );
+      if (phoneSuspended == true) {
+        setState(() {
+          _loading = false;
+          _error = "This phone number is associated with a suspended account.";
+        });
+        return;
+      }
+
       final res = await supabase.auth.signUp(
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text.trim(),

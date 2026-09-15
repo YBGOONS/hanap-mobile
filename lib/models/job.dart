@@ -25,6 +25,9 @@ class Job {
   final String? workerName;
   final int? rating;
   final String? ratingComment;
+  final String? refundReason;
+  final String? refundPhotoUrl;
+  final DateTime? refundRequestedAt;
   final String? refundAdminMessage;
 
   const Job({
@@ -49,6 +52,9 @@ class Job {
     this.workerName,
     this.rating,
     this.ratingComment,
+    this.refundReason,
+    this.refundPhotoUrl,
+    this.refundRequestedAt,
     this.refundAdminMessage,
   }) : updatedAt = updatedAt ?? createdAt;
 
@@ -97,6 +103,11 @@ class Job {
       workerName: _fullName(map['worker']),
       rating: _rating(map['ratings'])?['rating'] as int?,
       ratingComment: _rating(map['ratings'])?['comment'] as String?,
+      refundReason: map['refund_reason'] as String?,
+      refundPhotoUrl: map['refund_photo_url'] as String?,
+      refundRequestedAt: map['refund_requested_at'] != null
+          ? DateTime.tryParse(map['refund_requested_at'] as String)
+          : null,
       refundAdminMessage: map['refund_admin_message'] as String?,
     );
   }

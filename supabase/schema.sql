@@ -31,6 +31,7 @@ create table public.profiles (
   username text unique,
   nbi_clearance_path text,
   status text not null default 'active' check (status in ('pending', 'active', 'rejected', 'suspended')),
+  strikes smallint not null default 0, -- refund disputes resolved against this account; auto-suspended at 3, see bump_strikes()
   created_at timestamptz not null default now()
 );
 
@@ -167,6 +168,16 @@ language sql
 security definer set search_path = public
 as $$
   select not exists (select 1 from public.profiles where username = lower(trim(p_username)));
+$$;
+
+-- Lets the register screen block someone from dodging a suspension by
+-- signing up again under a new email with the same phone number.
+create or replace function public.is_phone_suspended(p_phone text)
+returns boolean
+language sql
+security definer set search_path = public
+as $$
+  select exists (select 1 from public.profiles where phone = p_phone and status = 'suspended');
 $$;
 
 -- ── JOBS ────────────────────────────────────────────────────────────────
@@ -706,11 +717,45 @@ begin
 end;
 $$;
 
+-- Records a refund-dispute loss against an account and auto-suspends once
+-- strikes hit the threshold — reuses the existing profiles.status enum, so
+-- a suspension here has real teeth (login_screen.dart blocks 'suspended'
+-- the same way it already blocks 'rejected') instead of being just a
+-- number nobody enforces. Not granted to authenticated — only called
+-- internally by resolve_refund and auto_resolve_stale_refunds below.
+create or replace function public.bump_strikes(p_user_id uuid)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_strikes smallint;
+begin
+  update public.profiles
+  set strikes = strikes + 1
+  where id = p_user_id
+  returning strikes into v_strikes;
+
+  if v_strikes >= 3 then
+    update public.profiles set status = 'suspended' where id = p_user_id;
+    insert into public.notifications (user_id, title, body)
+    values (
+      p_user_id,
+      'Account suspended',
+      'Your account has been suspended after repeated refund disputes resolved against you. Contact support if you think this is a mistake.'
+    );
+  end if;
+end;
+$$;
+
+revoke execute on function public.bump_strikes(uuid) from public;
+
 -- Admin approves or denies a pending refund request, always with a message
 -- explaining the decision. Approving sends the full escrowed amount back to
 -- the client; denying releases it to the worker instead (same effect as
 -- confirm_completion) — either way the dispute is fully resolved, nothing
--- is left sitting in escrow unresolved.
+-- is left sitting in escrow unresolved. Whichever side loses the dispute
+-- takes a strike (see bump_strikes above).
 create or replace function public.resolve_refund(job_id uuid, approve boolean, message text)
 returns void
 language plpgsql
@@ -737,6 +782,7 @@ begin
     update public.jobs set payment_status = 'refunded' where id = job_id;
     insert into public.transactions (job_id, client_id, worker_id, amount, type)
     values (j.id, j.client_id, j.worker_id, coalesce(j.budget, 0) + coalesce(j.service_fee, 0), 'refund');
+    perform public.bump_strikes(j.worker_id);
 
     insert into public.notifications (user_id, title, body, job_id)
     values (j.client_id, 'Refund approved', 'Your refund for "' || j.category || '" was approved: ' || message, j.id);
@@ -744,6 +790,7 @@ begin
     values (j.worker_id, 'Refund approved', 'The client''s refund for "' || j.category || '" was approved. No payment will be released for this job.', j.id);
   else
     update public.jobs set payment_status = 'released', confirmed_at = now() where id = job_id;
+    perform public.bump_strikes(j.client_id);
 
     insert into public.notifications (user_id, title, body, job_id)
     values (j.client_id, 'Refund denied', 'Your refund request for "' || j.category || '" was denied: ' || message, j.id);
@@ -756,6 +803,132 @@ $$;
 grant execute on function public.mark_job_paid(uuid) to authenticated;
 grant execute on function public.request_refund(uuid, text, text) to authenticated;
 grant execute on function public.resolve_refund(uuid, boolean, text) to authenticated;
+
+-- ── REFUND DISPUTE MESSAGES ─────────────────────────────────────────────
+-- The back-and-forth after a refund is requested — client and worker talk
+-- directly first, in a thread dedicated to this dispute (not the job's
+-- regular chat, so a formal evidence trail doesn't get buried in day-to-day
+-- logistics messages). Admin only gets pulled into THIS thread once the
+-- worker has sent their first reply here — Client reports → Worker has 3
+-- days to respond → only then does Admin mediate. All writes go through
+-- post_refund_message() below so "has the worker replied yet" is enforced
+-- server-side for Admin's case, not just hidden in the UI.
+
+create table public.refund_messages (
+  id uuid primary key default gen_random_uuid(),
+  job_id uuid not null references public.jobs (id) on delete cascade,
+  sender_id uuid not null references public.profiles (id) on delete cascade,
+  body text not null,
+  evidence_path text, -- storage path in the refund-evidence bucket, same as jobs.refund_photo_url
+  created_at timestamptz not null default now()
+);
+
+alter table public.refund_messages enable row level security;
+grant select on public.refund_messages to authenticated;
+create index refund_messages_job_id_idx on public.refund_messages (job_id, created_at);
+
+create policy "refund_messages_select_participants_or_admin"
+  on public.refund_messages for select
+  to authenticated
+  using (
+    exists (select 1 from public.jobs where id = job_id and (client_id = auth.uid() or worker_id = auth.uid()))
+    or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+  );
+
+create or replace function public.post_refund_message(p_job_id uuid, p_body text, p_evidence_path text default null)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  j record;
+  v_worker_replied boolean;
+begin
+  if p_body is null or length(trim(p_body)) = 0 then
+    raise exception 'Message can''t be empty.';
+  end if;
+
+  select * into j from public.jobs where id = p_job_id and payment_status = 'refund_requested';
+  if not found then
+    raise exception 'This refund dispute is not open for replies.';
+  end if;
+
+  if auth.uid() = j.client_id or auth.uid() = j.worker_id then
+    null; -- always allowed while the dispute is open
+  elsif exists (select 1 from public.profiles where id = auth.uid() and role = 'admin') then
+    select exists (
+      select 1 from public.refund_messages where job_id = p_job_id and sender_id = j.worker_id
+    ) into v_worker_replied;
+    if not v_worker_replied then
+      raise exception 'The worker hasn''t responded to this dispute yet.';
+    end if;
+  else
+    raise exception 'Not authorized.';
+  end if;
+
+  insert into public.refund_messages (job_id, sender_id, body, evidence_path)
+  values (p_job_id, auth.uid(), p_body, p_evidence_path);
+
+  if auth.uid() = j.client_id then
+    insert into public.notifications (user_id, title, body, job_id)
+    values (j.worker_id, 'New message on your refund dispute', 'The client replied on the "' || j.category || '" refund dispute.', j.id);
+  elsif auth.uid() = j.worker_id then
+    insert into public.notifications (user_id, title, body, job_id)
+    values (j.client_id, 'New message on your refund dispute', 'The worker replied on the "' || j.category || '" refund dispute.', j.id);
+  else
+    insert into public.notifications (user_id, title, body, job_id)
+    values (j.client_id, 'HANAP Admin joined your refund dispute', 'An admin posted a message on the "' || j.category || '" refund dispute.', j.id);
+    insert into public.notifications (user_id, title, body, job_id)
+    values (j.worker_id, 'HANAP Admin joined your refund dispute', 'An admin posted a message on the "' || j.category || '" refund dispute.', j.id);
+  end if;
+end;
+$$;
+
+grant execute on function public.post_refund_message(uuid, text, text) to authenticated;
+
+-- Auto-resolves a refund dispute in the client's favor if the worker never
+-- responds within 3 days of the request — same effect as resolve_refund's
+-- approve=true path (full refund, worker takes the strike), just triggered
+-- by pg_cron instead of an admin click, with a system-authored message.
+create or replace function public.auto_resolve_stale_refunds()
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  j record;
+begin
+  for j in
+    select * from public.jobs
+    where payment_status = 'refund_requested'
+      and refund_requested_at is not null
+      and refund_requested_at < now() - interval '3 days'
+      and not exists (
+        select 1 from public.refund_messages
+        where job_id = jobs.id and sender_id = jobs.worker_id
+      )
+  loop
+    update public.jobs
+    set payment_status = 'refunded',
+        refund_admin_message = 'HANAP System: This refund was automatically approved because the worker did not respond within 3 days.'
+    where id = j.id;
+
+    insert into public.transactions (job_id, client_id, worker_id, amount, type)
+    values (j.id, j.client_id, j.worker_id, coalesce(j.budget, 0) + coalesce(j.service_fee, 0), 'refund');
+
+    perform public.bump_strikes(j.worker_id);
+
+    insert into public.notifications (user_id, title, body, job_id)
+    values (j.client_id, 'Refund auto-approved', 'Your refund for "' || j.category || '" was automatically approved because the worker did not respond in time.', j.id);
+    insert into public.notifications (user_id, title, body, job_id)
+    values (j.worker_id, 'Refund auto-approved', 'A refund for "' || j.category || '" was automatically approved because you did not respond within 3 days.', j.id);
+  end loop;
+end;
+$$;
+
+revoke execute on function public.auto_resolve_stale_refunds() from public;
+-- Scheduled alongside the other pg_cron jobs, once the extension exists —
+-- see "SCHEDULED JOBS (pg_cron)" further down.
 
 -- ── CASHOUTS (worker withdrawals to GCash) ─────────────────────────────
 -- A worker "cashes out" their released job earnings to their registered
@@ -1019,10 +1192,13 @@ create policy "work_gallery_delete_own_folder"
   );
 
 -- ── SCHEDULED JOBS (pg_cron) ────────────────────────────────────────────
--- Two background sweeps: auto-cancel open jobs nobody accepted by their
--- scheduled date, and a once-daily reminder for jobs happening tomorrow.
--- These are called only by pg_cron (as the role that ran this migration,
--- typically postgres), never by client code — no grant to authenticated.
+-- Background sweeps: auto-cancel open jobs nobody accepted by their
+-- scheduled date, a once-daily reminder for jobs happening tomorrow, and
+-- (auto_resolve_stale_refunds, defined earlier alongside the refund
+-- dispute messages it depends on) auto-resolving a refund dispute the
+-- worker never responded to. These are called only by pg_cron (as the
+-- role that ran this migration, typically postgres), never by client code
+-- — no grant to authenticated.
 
 create extension if not exists pg_cron with schema extensions;
 
@@ -1077,6 +1253,7 @@ revoke execute on function public.send_job_reminders() from public;
 
 select cron.schedule('auto-expire-open-jobs', '*/30 * * * *', $$select public.auto_expire_open_jobs()$$);
 select cron.schedule('send-job-reminders', '0 0 * * *', $$select public.send_job_reminders()$$);
+select cron.schedule('auto-resolve-stale-refunds', '0 * * * *', $$select public.auto_resolve_stale_refunds()$$);
 
 -- ── STORAGE: NBI clearance uploads ─────────────────────────────────────
 -- Private bucket. Files are stored as `{user_id}/<filename>` — the folder

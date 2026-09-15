@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../main.dart';
+import '../../models/job.dart';
 import '../../theme/dashboard_theme.dart';
 import '../../utils/validators.dart';
 import '../../widgets/dashboard/dashboard_widgets.dart';
@@ -2399,14 +2400,41 @@ class _RefundsTabState extends State<_RefundsTab> {
   }
 
   Future<List<Map<String, dynamic>>> _load() async {
-    final rows = await supabase
-        .from('jobs')
-        .select(
-          '*, client:profiles!jobs_client_id_fkey(first_name,last_name), worker:profiles!jobs_worker_id_fkey(first_name,last_name)',
-        )
-        .eq('payment_status', 'refund_requested')
-        .order('refund_requested_at', ascending: false);
-    return (rows as List).cast<Map<String, dynamic>>();
+    final jobRows =
+        ((await supabase
+                    .from('jobs')
+                    .select(
+                      '*, client:profiles!jobs_client_id_fkey(first_name,last_name), worker:profiles!jobs_worker_id_fkey(first_name,last_name)',
+                    )
+                    .eq('payment_status', 'refund_requested')
+                    .order('refund_requested_at', ascending: false))
+                as List)
+            .cast<Map<String, dynamic>>();
+    if (jobRows.isEmpty) return jobRows;
+
+    // Admin's approve/deny only unlocks once the worker has replied in the
+    // dispute thread — a separate, cheap query rather than threading state
+    // up from each card's own RefundDisputeThread fetch.
+    final jobIds = jobRows.map((r) => r['id'] as String).toList();
+    final msgRows =
+        ((await supabase
+                    .from('refund_messages')
+                    .select('job_id, sender_id')
+                    .inFilter('job_id', jobIds))
+                as List)
+            .cast<Map<String, dynamic>>();
+    final workerIdByJob = {
+      for (final r in jobRows) r['id'] as String: r['worker_id'] as String?,
+    };
+    final repliedJobIds = <String>{
+      for (final m in msgRows)
+        if (m['sender_id'] == workerIdByJob[m['job_id']]) m['job_id'] as String,
+    };
+
+    return [
+      for (final r in jobRows)
+        {...r, '_worker_replied': repliedJobIds.contains(r['id'])},
+    ];
   }
 
   Future<void> _refresh() async {
@@ -2482,7 +2510,8 @@ class _RefundsTabState extends State<_RefundsTab> {
                     physics: const AlwaysScrollableScrollPhysics(),
                     itemCount: rows.length,
                     itemBuilder: (context, i) => _RefundCard(
-                      job: rows[i],
+                      job: Job.fromMap(rows[i]),
+                      workerReplied: rows[i]['_worker_replied'] as bool,
                       acting: _actingOnId == rows[i]['id'],
                       onApprove: (message) =>
                           _resolve(rows[i]['id'] as String, true, message),
@@ -2501,13 +2530,15 @@ class _RefundsTabState extends State<_RefundsTab> {
 }
 
 class _RefundCard extends StatefulWidget {
-  final Map<String, dynamic> job;
+  final Job job;
+  final bool workerReplied;
   final bool acting;
   final ValueChanged<String> onApprove;
   final ValueChanged<String> onDeny;
 
   const _RefundCard({
     required this.job,
+    required this.workerReplied,
     required this.acting,
     required this.onApprove,
     required this.onDeny,
@@ -2526,40 +2557,11 @@ class _RefundCardState extends State<_RefundCard> {
     super.dispose();
   }
 
-  Future<void> _viewEvidence(String path) async {
-    try {
-      final url = await supabase.storage
-          .from('refund-evidence')
-          .createSignedUrl(path, 60 * 10);
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Could not open photo: $e")));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final job = widget.job;
-    final client = job['client'] as Map<String, dynamic>?;
-    final worker = job['worker'] as Map<String, dynamic>?;
-    final clientName = client == null
-        ? '—'
-        : "${client['first_name']} ${client['last_name']}";
-    final workerName = worker == null
-        ? '—'
-        : "${worker['first_name']} ${worker['last_name']}";
-    final budget = (job['budget'] as num?)?.toDouble();
-    final serviceFee = (job['service_fee'] as num?)?.toDouble();
-    final photoPath = job['refund_photo_url'] as String?;
-    final requestedAt = DateTime.tryParse(
-      job['refund_requested_at'] as String? ?? '',
-    );
-    final dateLabel = requestedAt == null
-        ? '—'
-        : "${requestedAt.year}-${requestedAt.month.toString().padLeft(2, '0')}-${requestedAt.day.toString().padLeft(2, '0')}";
+    final budget = job.budget;
+    final serviceFee = job.serviceFee;
     final canAct = _messageCtrl.text.trim().isNotEmpty;
 
     return Container(
@@ -2579,7 +2581,7 @@ class _RefundCardState extends State<_RefundCard> {
             children: [
               Expanded(
                 child: Text(
-                  job['category'] as String,
+                  job.category,
                   style: DashboardText.heading(size: 15, color: Colors.black87),
                 ),
               ),
@@ -2595,120 +2597,112 @@ class _RefundCardState extends State<_RefundCard> {
           ),
           const SizedBox(height: 6),
           Text(
-            "Client: $clientName  ·  Worker: $workerName",
+            "Client: ${job.clientName ?? '—'}  ·  Worker: ${job.workerName ?? '—'}",
             style: DashboardText.body(size: 12, color: DashboardColors.muted),
           ),
-          const SizedBox(height: 2),
-          Text(
-            "Requested $dateLabel",
-            style: DashboardText.body(size: 12, color: DashboardColors.muted),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: DashboardColors.bg,
-              borderRadius: BorderRadius.circular(8),
+          RefundDisputeThread(job: job),
+          if (widget.workerReplied) ...[
+            const SizedBox(height: 16),
+            const Divider(height: 1, color: DashboardColors.border),
+            const SizedBox(height: 14),
+            Text(
+              "Resolve this dispute",
+              style: DashboardText.heading(size: 13, color: Colors.black87),
             ),
-            child: Text(
-              job['refund_reason'] as String? ?? 'No reason given.',
-              style: DashboardText.body(
-                size: 13,
-                color: Colors.black87,
-              ).copyWith(height: 1.4),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (photoPath != null)
-            OutlinedButton.icon(
-              onPressed: () => _viewEvidence(photoPath),
-              icon: const Icon(Icons.photo_outlined, size: 16),
-              label: Text(
-                "View Photo Evidence",
-                style: DashboardText.body(size: 12, weight: FontWeight.w600),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _messageCtrl,
+              maxLines: 2,
+              style: DashboardText.body(size: 13, color: Colors.black87),
+              decoration: dashboardInputDecoration(
+                label: "Message to client",
+                hint: "Explain your decision (required)",
               ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: DashboardColors.primary,
-                side: const BorderSide(color: DashboardColors.border),
-              ),
+              onChanged: (_) => setState(() {}),
             ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _messageCtrl,
-            maxLines: 2,
-            style: DashboardText.body(size: 13, color: Colors.black87),
-            decoration: dashboardInputDecoration(
-              label: "Message to client",
-              hint: "Explain your decision (required)",
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 40,
-                  child: ElevatedButton(
-                    onPressed: widget.acting || !canAct
-                        ? null
-                        : () => widget.onApprove(_messageCtrl.text.trim()),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: DashboardColors.statusCompleted,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 40,
+                    child: ElevatedButton(
+                      onPressed: widget.acting || !canAct
+                          ? null
+                          : () => widget.onApprove(_messageCtrl.text.trim()),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: DashboardColors.statusCompleted,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
-                    ),
-                    child: widget.acting
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
+                      child: widget.acting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(
+                              "Approve Refund",
+                              style: DashboardText.body(
+                                size: 13,
+                                weight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
                             ),
-                          )
-                        : Text(
-                            "Approve Refund",
-                            style: DashboardText.body(
-                              size: 13,
-                              weight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: SizedBox(
-                  height: 40,
-                  child: OutlinedButton(
-                    onPressed: widget.acting || !canAct
-                        ? null
-                        : () => widget.onDeny(_messageCtrl.text.trim()),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFC62828),
-                      side: const BorderSide(color: Color(0xFFC62828)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      "Deny (release to worker)",
-                      style: DashboardText.body(
-                        size: 12,
-                        weight: FontWeight.w700,
-                      ),
-                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SizedBox(
+                    height: 40,
+                    child: OutlinedButton(
+                      onPressed: widget.acting || !canAct
+                          ? null
+                          : () => widget.onDeny(_messageCtrl.text.trim()),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFC62828),
+                        side: const BorderSide(color: Color(0xFFC62828)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Text(
+                        "Deny (release to worker)",
+                        style: DashboardText.body(
+                          size: 12,
+                          weight: FontWeight.w700,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: DashboardColors.statusPending.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
               ),
-            ],
-          ),
+              child: Text(
+                "Waiting for the worker to respond — not actionable yet. This auto-resolves in the client's favor if they don't reply in time.",
+                style: DashboardText.body(
+                  size: 12,
+                  color: DashboardColors.statusPending,
+                ).copyWith(fontStyle: FontStyle.italic),
+              ),
+            ),
+          ],
         ],
       ),
     );
