@@ -2673,7 +2673,7 @@ class _RefundCardState extends State<_RefundCard> {
                         ),
                       ),
                       child: Text(
-                        "Deny (release to worker)",
+                        "Deny (payment to worker)",
                         style: DashboardText.body(
                           size: 12,
                           weight: FontWeight.w700,
